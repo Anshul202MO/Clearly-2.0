@@ -232,7 +232,7 @@ function AppProvider({children}){
         "Each of 5 variations must feel meaningfully different in tone, length, angle. Keep SHORT and punchy.",
         "",
         "RESPOND WITH ONLY RAW JSON. No markdown. No explanation. No code fences:",
-        '{"isExit":false,"variations":[{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"}]}',
+        '{"isExit":false,"variations":[{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"}]}',
       ].join("\n");
 
       const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
@@ -725,28 +725,45 @@ function Main(){
 
 function Output(){
   const {go,ctx,raw,result,setResult,loading,genError,generate,personality,showPaywall}=useApp();
-  const [copied,setCopied]=useState(false);
   const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
   const isExit=result?.isExit||false;
-  const copy=async()=>{
-    if(!result?.refined)return;
-    try{await navigator.clipboard.writeText(result.refined);setCopied(true);setTimeout(()=>setCopied(false),2200);}catch(_){}
-  };
-  const nextVariation=()=>{
+  const [copiedIndex,setCopiedIndex]=useState(null);
+  const [ratings,setRatings]=useState({0:0,1:0,2:0});
+  const [hoveredStar,setHoveredStar]=useState({card:null,star:null});
+  const [feedback,setFeedback]=useState({0:"",1:"",2:""});
+  const [profanityWarning,setProfanityWarning]=useState({0:false,1:false,2:false});
+  const [visible,setVisible]=useState([false,false,false]);
+
+  const PROFANITY=["fuck","shit","cunt","bitch","asshole","bastard","dick","pussy","cock","twat","wanker","piss","arse","bollocks","damn","crap","motherfucker","fucker"];
+
+  function containsProfanity(text){
+    const words=text.toLowerCase().replace(/[^a-z\s]/g,"").split(/\s+/);
+    return words.some(w=>PROFANITY.includes(w));
+  }
+
+  useEffect(()=>{
     if(!result?.variations)return;
-    const next=(result.currentIndex+1)%result.variations.length;
-    const v=result.variations[next];
-    setResult({...result,currentIndex:next,...v});
+    setVisible([false,false,false]);
+    const t0=setTimeout(()=>setVisible(v=>[true,v[1],v[2]]),100);
+    const t1=setTimeout(()=>setVisible(v=>[v[0],true,v[2]]),300);
+    const t2=setTimeout(()=>setVisible(v=>[v[0],v[1],true]),500);
+    return()=>{clearTimeout(t0);clearTimeout(t1);clearTimeout(t2);};
+  },[result]);
+
+  const copy=async(text,index)=>{
+    try{await navigator.clipboard.writeText(text);setCopiedIndex(index);setTimeout(()=>setCopiedIndex(null),2200);}catch(_){}
   };
-  const total=result?.variations?.length||1;
-  const Dots=()=>(
-    <div style={{display:"flex",gap:5,justifyContent:"center",marginBottom:18}}>
-      {Array.from({length:total}).map((_,i)=>(
-        <div key={i} onClick={()=>{const v=result.variations[i];setResult({...result,currentIndex:i,...v});}}
-          style={{width:i===result?.currentIndex?18:6,height:6,borderRadius:3,background:i===result?.currentIndex?(isExit?D.exit:D.accent):D.border,transition:"all .25s",cursor:"pointer"}}/>
-      ))}
-    </div>
-  );
+
+  const handleFeedback=(index,value)=>{
+    if(containsProfanity(value)){
+      setProfanityWarning(p=>({...p,[index]:true}));
+      setTimeout(()=>setProfanityWarning(p=>({...p,[index]:false})),3000);
+    }
+    setFeedback(f=>({...f,[index]:value}));
+  };
+
+  const variations=result?.variations||[];
+
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
       {showPaywall&&<Paywall/>}
@@ -758,7 +775,7 @@ function Output(){
           <span style={{fontFamily:D.sans,fontSize:11,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{ctx.label}</span>
         </div>
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"20px 24px 36px",position:"relative",zIndex:1,scrollbarWidth:"none"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"16px 24px 36px",position:"relative",zIndex:1,scrollbarWidth:"none"}}>
         {loading&&(
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70%",gap:16}}>
             <div style={{width:36,height:36,borderRadius:"50%",border:`2px solid ${D.border}`,borderTop:`2px solid ${D.accent}`,animation:"spin 1s linear infinite"}}/>
@@ -773,34 +790,48 @@ function Output(){
         )}
         {!loading&&!genError&&result&&(
           <div>
-            <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,lineHeight:1.25,letterSpacing:"-0.01em",marginBottom:6}}>
+            <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,lineHeight:1.25,letterSpacing:"-0.01em",marginBottom:20}}>
               {isExit?"Here's your escape plan.":<>Here's what to <em style={{fontStyle:"italic",color:D.accent}}>say.</em></>}
             </h2>
-            <div style={{display:"inline-flex",alignItems:"center",gap:8,marginBottom:14,marginTop:6}}>
-              <div style={{width:6,height:6,borderRadius:"50%",background:isExit?D.exit:"#6BBF8E"}}/>
-              <span style={{fontFamily:D.sans,fontSize:12,color:D.cream3}}>{result.toneLabel}</span>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              {variations.slice(0,3).map((v,i)=>(
+                <div key={i} style={{opacity:visible[i]?1:0,transform:visible[i]?"translateY(0)":"translateY(12px)",transition:"opacity 0.4s ease, transform 0.4s ease"}}>
+                  <div style={{background:isExit?D.exitLight:`linear-gradient(135deg,${D.surface} 0%,${D.surf2} 100%)`,border:`1px solid ${isExit?D.exit+"40":D.accent+"40"}`,borderRadius:16,padding:"16px 18px"}}>
+                    <p style={{fontFamily:D.sans,fontSize:10,color:isExit?D.exit:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>
+                      {isExit?"Exit line":"Filtered version"}
+                    </p>
+                    <p style={{fontFamily:D.sans,fontSize:15,color:D.cream,lineHeight:1.8,marginBottom:12,whiteSpace:"pre-wrap"}}>{v.refined}</p>
+                    {v.explanation&&<p style={{fontFamily:D.sans,fontSize:12,color:D.cream3,lineHeight:1.6,marginBottom:14,fontStyle:"italic"}}>✦ {v.explanation}</p>}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                      <div style={{display:"flex",gap:4}}>
+                        {[1,2,3,4,5].map(s=>(
+                          <span key={s}
+                            onMouseEnter={()=>setHoveredStar({card:i,star:s})}
+                            onMouseLeave={()=>setHoveredStar({card:null,star:null})}
+                            onClick={()=>setRatings(r=>({...r,[i]:s}))}
+                            style={{fontSize:18,cursor:"pointer",color:(hoveredStar.card===i&&s<=hoveredStar.star)||s<=ratings[i]?"#E8C97A":D.cream3,transition:"color 0.15s"}}>
+                            {(hoveredStar.card===i&&s<=hoveredStar.star)||s<=ratings[i]?"★":"☆"}
+                          </span>
+                        ))}
+                      </div>
+                      <button onClick={()=>copy(v.refined,i)}
+                        style={{background:isExit?D.exit:D.accent,color:"#fff",border:"1px solid rgba(255,255,255,0.15)",borderRadius:8,padding:"6px 16px",fontFamily:D.sans,fontSize:12,fontWeight:500,cursor:"pointer"}}>
+                        {copiedIndex===i?"Copied ✓":"Copy"}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={feedback[i]}
+                      onChange={e=>handleFeedback(i,e.target.value)}
+                      placeholder="Anything to add? (optional)"
+                      style={{width:"100%",background:D.bg2,border:`1px solid ${D.border2}`,borderRadius:8,padding:"8px 12px",fontFamily:D.sans,fontSize:12,color:D.cream2,outline:"none"}}
+                    />
+                    {profanityWarning[i]&&<p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,marginTop:5}}>Keep it clean 🙂</p>}
+                  </div>
+                </div>
+              ))}
             </div>
-            <Dots/>
-            <div style={{background:isExit?D.exitLight:`linear-gradient(135deg,${D.surface} 0%,${D.surf2} 100%)`,border:`1px solid ${isExit?D.exit+"40":D.accent+"40"}`,borderRadius:18,padding:"20px 18px",marginBottom:12,boxShadow:`0 4px 24px ${isExit?D.exit:D.accent}15`}}>
-              <p style={{fontFamily:D.sans,fontSize:10,color:isExit?D.exit:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>
-                {isExit?"Your exit line":"Filtered version"}
-              </p>
-              <p style={{fontFamily:D.sans,fontSize:15,color:D.cream,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{result.refined}</p>
-            </div>
-            {result.explanation&&<p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,lineHeight:1.6,marginBottom:16,fontStyle:"italic"}}>✦ {result.explanation}</p>}
-            <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:14,padding:"14px 18px",marginBottom:18}}>
-              <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Your original</p>
-              <p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,lineHeight:1.65,fontStyle:"italic"}}>{raw}</p>
-            </div>
-            <div style={{display:"flex",gap:10,marginBottom:14}}>
-              <PBtn onClick={copy} style={{flex:1,padding:"13px 16px",background:isExit?D.exit:D.accent,color:"#fff",border:"1px solid rgba(255,255,255,0.15)"}}>
-                {copied?"Copied ✓":"Copy"}
-              </PBtn>
-              <GBtn onClick={nextVariation} style={{flex:1,padding:"13px 16px"}}>
-                Next {isExit?"escape":"version"} →
-              </GBtn>
-            </div>
-            <div style={{textAlign:"center"}}>
+            <div style={{textAlign:"center",marginTop:16}}>
               <button onClick={()=>go("main")} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>
                 Start over
               </button>
