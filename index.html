@@ -1,1160 +1,862 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clearly</title>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>Clearly — filter your thoughts</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;width:100%;background:#1A1612;}
+#root{height:100%;width:100%;}
+textarea::placeholder{color:#6B6259;font-style:italic;}
+input::placeholder{color:#6B6259;}
+::-webkit-scrollbar{display:none;}
+@keyframes pulse{0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+</style>
 </head>
-<body style="margin:0;padding:0;">
-  <div id="root"></div>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useContext,createContext,useEffect,useCallback,useRef}=React;
 
-  <!-- React + ReactDOM from CDN -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel to compile JSX in the browser -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+// =============================================
+// PASTE YOUR GROQ API KEY BETWEEN THE QUOTES
+// Get free at: console.groq.com
+// Starts with: gsk_
+// =============================================
+const GROQ_KEY = "";
+// =============================================
 
-  <script type="text/babel">
-    // Destructure React hooks from the global React object (CDN doesn't use imports)
-    const { useState, createContext, useContext, useEffect, useRef, useCallback } = React;
+const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
+const ENTRY_NAME  = "entry.1321807565";
+const ENTRY_EMAIL = "entry.13266213";
+const CONTACT_EMAIL = "clearlysupport@gmail.com";
+const FREE_LIMIT = 5;
 
-    // ════════════════════════════════════════════════════════════════════
-    //  CONFIG — replace with your Groq API key
-    //  Get one free at: https://console.groq.com/keys
-    // ════════════════════════════════════════════════════════════════════
+function getUsage(){try{const r=localStorage.getItem("clr_usage");if(!r)return{count:0,date:new Date().toDateString()};return JSON.parse(r);}catch(_){return{count:0,date:new Date().toDateString()};}}
+function incrementUsage(){const today=new Date().toDateString();const u=getUsage();const count=u.date===today?u.count+1:1;try{localStorage.setItem("clr_usage",JSON.stringify({count,date:today}));}catch(_){}return count;}
+function todayUsage(){const u=getUsage();if(u.date!==new Date().toDateString())return 0;return u.count;}
+function getAgeGateAccepted(){try{return localStorage.getItem("clr_age")==="1";}catch(_){return false;}}
+function getToSAccepted(){try{return localStorage.getItem("clr_tos")==="1";}catch(_){return false;}}
 
-    const GROQ_API_KEY = "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";
+async function submitToGoogle(name,email){
+  const formData=new FormData();
+  formData.append(ENTRY_NAME,name);
+  formData.append(ENTRY_EMAIL,email);
+  await fetch(GOOGLE_FORM_URL,{method:"POST",mode:"no-cors",body:formData});
+}
 
-    // ════════════════════════════════════════════════════════════════════
-    //  MODEL LAYER
-    // ════════════════════════════════════════════════════════════════════
+const CONTEXTS=[
+  {id:"work",  label:"Work",  sub:"meetings, slack, feedback", tone:"Professional, direct, solution-focused. Remove blame and emotion."},
+  {id:"dating",label:"Dating",sub:"texts, dates, crushes",     tone:"Warm and genuine. Natural, not desperate. Remove try-hard energy."},
+  {id:"social",label:"Social",sub:"friends, in-person chats",  tone:"Conversational, relaxed, human. Short enough to say aloud."},
+  {id:"email", label:"Email", sub:"professional messages",     tone:"Polished, one clear ask, no fluff. Professional but not cold."},
+];
 
-    const CONTEXT_TYPES = {
-      CORPORATE: { id:"corporate", icon:"💼", label:"Corporate meeting",   sub:"Professional, clear, confident",  toneModifier:"Be professional and solution-focused. Remove blame, emotion, and rambling." },
-      DATE:      { id:"date",      icon:"💬", label:"Date / crush text",    sub:"Warm, natural, not desperate",    toneModifier:"Be warm and genuine. Natural over perfect. Remove try-hard energy." },
-      INPERSON:  { id:"inperson",  icon:"🗣️", label:"In-person chat",       sub:"Relaxed, human, conversational",  toneModifier:"Short enough to say aloud. Conversational and human — no stiff phrasing." },
-      EMAIL:     { id:"email",     icon:"📧", label:"Professional email",   sub:"Polished, brief, purposeful",     toneModifier:"Polished and scannable. One clear ask. No fluff. Professional but not cold." },
-    };
+const ARCHETYPES={
+  "over-explainer":{key:"over-explainer",label:"The Over-Sharer",emoji:"📖",color:"#E8A87C",
+    tagline:"You lead with empathy, context, and about 40% too many words.",
+    traits:["Empathetic","Thorough","Verbose"],
+    tip:"Write it all out, then delete the first two sentences.",
+    exitStyle:"Give a detailed story-based excuse with names and context. Make it believable because you over-explain naturally. Example: Oh my god, I just got a text — my friend Maya is locked out of her flat and I am literally the only one with a spare key. I am so sorry, I have to run!"},
+  terse:{key:"terse",label:"The Clammer",emoji:"🔒",color:"#7C9EBE",
+    tagline:"Under pressure you go quiet. What comes out is curt and often misread.",
+    traits:["Efficient","Private","Guarded"],
+    tip:"Add one warm sentence before your main point.",
+    exitStyle:"Give the shortest possible exit. One sentence, no explanation. Example: I have to go. Or: Sorry, something came up. Nothing more."},
+  qualifier:{key:"qualifier",label:"The Softener",emoji:"🌿",color:"#8CBE8C",
+    tagline:"You wrap every thought in cushions. The point is in there — somewhere.",
+    traits:["Considerate","Diplomatic","Hedging"],
+    tip:"Lead with the ask. Soften after.",
+    exitStyle:"Give a warm apologetic excuse loaded with softeners. Example: I am so sorry, I really hate to do this, but I just remembered I promised to help someone and I would feel terrible letting them down — would you mind if I slipped away?"},
+  blunt:{key:"blunt",label:"The Steamroller",emoji:"⚡",color:"#BE9B7C",
+    tagline:"You say exactly what you mean — sometimes before checking the moment.",
+    traits:["Direct","Decisive","Unfiltered"],
+    tip:"Add one line of context before you land the point.",
+    exitStyle:"Give a direct unapologetic exit. No story needed. Example: I need to head off. Or: I am going to go now. Delivered with confidence."},
+};
 
-    const SCREENS = { ONBOARDING:"onboarding", HOME:"home", INPUT:"input", OUTPUT:"output", PROFILE:"profile" };
+const EXIT_CATEGORIES=`
+EXIT SITUATIONS — if the user message matches any of these, return exit excuses not rewrites. Set isExit to true.
 
-    const ARCHETYPES = {
-      "over-explainer": { key:"over-explainer", label:"The Over-Sharer",  emoji:"📖", tagline:"You lead with empathy, context, and about 40% too many words.",                             traits:["Thorough","Empathetic","Verbose"],   tip:"Write it all out, then cut the first two sentences." },
-      terse:            { key:"terse",          label:"The Clammer",       emoji:"🔒", tagline:"Under pressure, you go quiet. What comes out is curt and often misread.",                   traits:["Efficient","Private","Guarded"],     tip:"Add one warm sentence before your main point." },
-      qualifier:        { key:"qualifier",      label:"The Softener",      emoji:"🌧",  tagline:"You wrap every thought in cushions. The point is in there — somewhere.",                   traits:["Considerate","Diplomatic","Hedging"],tip:"State the ask first, soften second." },
-      blunt:            { key:"blunt",          label:"The Steamroller",   emoji:"⚡", tagline:"You say exactly what you mean — sometimes before checking if it's the right moment.",       traits:["Direct","Decisive","Unfiltered"],    tip:"Add one line of context before landing the point." },
-    };
+CATEGORY 1 PHYSICAL DISCOMFORT: bad body odour, bad breath, hygiene issues, standing too close, invading personal space, visibly sick and coughing on them, touched without consent, trapped in a hug too long.
 
-    function getToneTip(ctxId, style) {
-      const M = {
-        corporate:{ "over-explainer":"Lead with the outcome. Add context only if asked.", terse:"One sentence explaining why this matters — then the ask.", qualifier:"Drop 'I think maybe' and state it. You can afford to.", blunt:"Brief acknowledgment first, then your point." },
-        date:     { "over-explainer":"2–3 sentences max. Less is warmer.",                 terse:"One genuine line of warmth — that's all it takes.",          qualifier:"Say what you actually want. Hedging reads as disinterest.", blunt:"Soften the edge — charm lives in the delivery." },
-        inperson: { "over-explainer":"Say it like you'd tell a friend. Skip the preamble.",terse:"A little warmth in person goes a long way.",                 qualifier:"Own your take. Say it once, clearly, then stop.",          blunt:"Leave a pause after you land it. Let them respond." },
-        email:    { "over-explainer":"One ask per email. Everything else is noise.",        terse:"Add a greeting and one line of context — bare emails feel abrupt.", qualifier:"Your subject line should be your bottom line.",        blunt:"Emails get forwarded. Soften where it costs you nothing." },
-      };
-      return M[ctxId]?.[style] || "Keep it clear and direct.";
-    }
+CATEGORY 2 SOCIALLY IMPOSSIBLE: someone extremely drunk or high wants a deep talk, someone mid-meltdown crying in public, someone on verge of a fight looking for argument, stranger venting life story.
 
-    const defaultPersonality = { communicationStyle:null, toneDefault:null, mainTrigger:null, afterSendFeeling:null, helpGoal:null, archetypeKey:null, archetypeLabel:null, archetypeTagline:null, aiPromptSummary:null, completed:false };
+CATEGORY 3 WORKPLACE LANDMINES: boss is wrong but wrong moment, colleague taking credit in front of others, someone asking their salary or personal finances, HR asking something needing a lawyer, client being inappropriate.
 
-    function buildPersonality(answers) {
-      const arch = ARCHETYPES[answers.communicationStyle] || ARCHETYPES.qualifier;
-      const tM = { "warm-casual":"warm & casual", formal:"formal/stiff", passive:"passive/hedging", direct:"confident & direct" };
-      const tgM = { conflict:"conflict & feedback", romantic:"romantic situations", authority:"authority figures", group:"group settings" };
-      const gM = { brevity:"say less/cut fluff", warmth:"add warmth", confidence:"sound confident", tone:"match tone to context" };
-      const aM = { overshared:"oversharing", underplayed:"being too cold", ruminator:"re-reading obsessively", "pre-worry":"anticipation before sending" };
-      const aiPromptSummary = [
-        `Personality: "${arch.label}" — ${arch.tagline}`,
-        `Under stress: ${answers.communicationStyle?.replace("-"," ")}.`,
-        `Default tone: ${tM[answers.toneDefault]||answers.toneDefault}.`,
-        `Overthinks most: ${tgM[answers.mainTrigger]||answers.mainTrigger}.`,
-        `After-send worry: ${aM[answers.afterSendFeeling]||answers.afterSendFeeling}.`,
-        `Primary goal: ${gM[answers.helpGoal]||answers.helpGoal}.`,
-        `Tip: ${arch.tip}`,
-      ].join(" ");
-      return { ...answers, archetypeKey:arch.key, archetypeLabel:arch.label, archetypeTagline:arch.tagline, aiPromptSummary, completed:true };
-    }
+CATEGORY 4 FAMILY AND RELATIONSHIP TRAPS: relative asking when getting married or having kids, unsolicited parenting or life advice, ex trying to restart closed conversation, family member starting political or religious argument at dinner, asked opinion on terrible partner.
 
-    // ════════════════════════════════════════════════════════════════════
-    //  LOGO OPTIONS (5 SVG variants)
-    // ════════════════════════════════════════════════════════════════════
+CATEGORY 5 DATING AND SOCIAL AWKWARDNESS: date going badly and need to leave, someone flirting and not interested, friend of friend wont stop talking, someone clearly lying but cannot call it out, being asked to take sides in someone else argument.
 
-    const LOGO_META = {
-      serif:   { name:"Serif Drop",   desc:"Editorial & warm" },
-      filter:  { name:"The Filter",   desc:"Geometric clarity" },
-      cmark:   { name:"C-Mark",       desc:"Bold monogram" },
-      wave:    { name:"Signal Wave",  desc:"Fluid & human" },
-      minimal: { name:"Wordmark",     desc:"Clean confidence" },
-    };
+CATEGORY 6 DIGITAL TEXT TRAPS: someone sends long rant expecting full response, group chat blowing up and being pulled in, passive aggressive message received, old contact resurfaces wanting something.
+`;
 
-    function LogoSerif({ compact = false }) {
-      return (
-        <svg width={compact ? 72 : 110} height={compact ? 20 : 30} viewBox="0 0 110 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="24" fontFamily="Georgia,serif" fontSize="24" fontWeight="300" fill="#1C1814" fontStyle="italic">Clear</text>
-          <text x="68" y="24" fontFamily="Georgia,serif" fontSize="24" fontWeight="300" fill="#B85C30" fontStyle="italic">ly</text>
-          <circle cx="104" cy="7" r="3.5" fill="#B85C30" />
-        </svg>
-      );
-    }
+const QUIZ=[
+  {field:"communicationStyle",q:"When you're stressed, your messages tend to be…",opts:[
+    {val:"over-explainer",text:"Long. I explain everything, add context, then add more context."},
+    {val:"terse",         text:"Short. Too short. People think I'm annoyed when I'm just stressed."},
+    {val:"qualifier",     text:"Full of 'maybe', 'I think', 'just wondering if' — the point gets buried."},
+    {val:"blunt",         text:"Direct. Sometimes uncomfortably so."},
+  ]},
+  {field:"toneDefault",q:"In professional settings, you're usually…",opts:[
+    {val:"warm-casual",text:"Warm and friendly — probably too casual for the room."},
+    {val:"formal",     text:"Formal and stiff — it can feel impersonal."},
+    {val:"passive",    text:"Passive. I hedge a lot."},
+    {val:"direct",     text:"Confident — occasionally comes across as blunt."},
+  ]},
+  {field:"mainTrigger",q:"You're most likely to spiral when…",opts:[
+    {val:"conflict",  text:"There's conflict, tension, or I need to give hard feedback."},
+    {val:"romantic",  text:"It's romantic or social — stakes feel personal."},
+    {val:"authority", text:"I'm talking to someone with power over me."},
+    {val:"group",     text:"I'm in a group and feel like I'll be judged."},
+  ]},
+  {field:"afterSendFeeling",q:"After you hit send, you usually feel…",opts:[
+    {val:"overshared",  text:"Immediate regret. Did I say too much?"},
+    {val:"underplayed", text:"Worry. Was that too cold or short?"},
+    {val:"ruminator",   text:"Fine — until I re-read it three times later."},
+    {val:"pre-worry",   text:"Okay. The before is harder than the after."},
+  ]},
+  {field:"helpGoal",q:"What do you actually want help with?",opts:[
+    {val:"brevity",    text:"Saying less. I over-explain and I know it."},
+    {val:"warmth",     text:"Saying more. I come across as cold or terse."},
+    {val:"confidence", text:"Sounding confident — not apologetic."},
+    {val:"tone",       text:"Reading the room and matching my tone to it."},
+  ]},
+];
 
-    function LogoFilter({ compact = false }) {
-      return (
-        <svg width={compact ? 72 : 112} height={compact ? 20 : 30} viewBox="0 0 112 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M3 5 L17 5 L10.5 18 L9.5 18 Z" fill="#B85C30" />
-          <rect x="8.5" y="18" width="3" height="6" rx="1.5" fill="#B85C30" />
-          <line x1="0" y1="5" x2="20" y2="5" stroke="#B85C30" strokeWidth="1.5" strokeLinecap="round" />
-          <text x="26" y="22" fontFamily="'DM Sans',sans-serif" fontSize="17" fontWeight="400" fill="#1C1814" letterSpacing="0.3">clearly</text>
-        </svg>
-      );
-    }
+function buildPersonality(ans){
+  const arch=ARCHETYPES[ans.communicationStyle]||ARCHETYPES.qualifier;
+  const tM={"warm-casual":"warm & casual",formal:"formal/stiff",passive:"passive/hedging",direct:"confident & direct"};
+  const tgM={conflict:"conflict & feedback",romantic:"romantic situations",authority:"authority figures",group:"group settings"};
+  const gM={brevity:"saying less",warmth:"adding warmth",confidence:"sounding confident",tone:"matching tone"};
+  const aM={overshared:"oversharing",underplayed:"being too cold",ruminator:"re-reading obsessively","pre-worry":"anticipation"};
+  const summary=[
+    `Archetype: "${arch.label}" — ${arch.tagline}`,
+    `Under stress: ${ans.communicationStyle?.replace("-"," ")}.`,
+    `Default tone: ${tM[ans.toneDefault]||ans.toneDefault}.`,
+    `Overthinks in: ${tgM[ans.mainTrigger]||ans.mainTrigger}.`,
+    `After-send fear: ${aM[ans.afterSendFeeling]||ans.afterSendFeeling}.`,
+    `Goal: ${gM[ans.helpGoal]||ans.helpGoal}.`,
+    `Tip: ${arch.tip}`,
+    `Exit style: ${arch.exitStyle}`,
+  ].join(" ");
+  return{...ans,archetypeKey:arch.key,archetypeLabel:arch.label,archetypeTagline:arch.tagline,aiPromptSummary:summary,completed:true};
+}
 
-    function LogoCMark({ compact = false }) {
-      return (
-        <svg width={compact ? 72 : 110} height={compact ? 20 : 30} viewBox="0 0 110 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="13" cy="15" r="11" stroke="#B85C30" strokeWidth="2.2" fill="none" />
-          <path d="M20.5 7.5 Q7 7.5 7 15 Q7 22.5 20.5 22.5" stroke="#B85C30" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-          <line x1="13" y1="15" x2="24" y2="15" stroke="#B85C30" strokeWidth="1.8" strokeLinecap="round" />
-          <text x="30" y="21" fontFamily="'DM Sans',sans-serif" fontSize="13" fontWeight="500" fill="#1C1814" letterSpacing="2.5">CLEARLY</text>
-        </svg>
-      );
-    }
+const defaultP={communicationStyle:null,toneDefault:null,mainTrigger:null,afterSendFeeling:null,helpGoal:null,archetypeKey:null,completed:false,aiPromptSummary:null};
 
-    function LogoWave({ compact = false }) {
-      return (
-        <svg width={compact ? 72 : 114} height={compact ? 20 : 30} viewBox="0 0 114 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M2 9 Q8 3 14 9 Q20 15 26 9 Q32 3 38 9" stroke="#B85C30" strokeWidth="1.8" fill="none" strokeLinecap="round" />
-          <text x="44" y="23" fontFamily="Georgia,serif" fontSize="19" fontWeight="300" fill="#1C1814" fontStyle="italic">Clearly</text>
-        </svg>
-      );
-    }
+const AC=createContext(null);
+const useApp=()=>useContext(AC);
 
-    function LogoWordmark({ compact = false }) {
-      return (
-        <svg width={compact ? 72 : 112} height={compact ? 20 : 30} viewBox="0 0 112 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <text x="0" y="22" fontFamily="'DM Sans',sans-serif" fontSize="20" fontWeight="300" fill="#1C1814" letterSpacing="3">clearly</text>
-          <line x1="0" y1="27" x2="108" y2="27" stroke="#B85C30" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      );
-    }
+function AppProvider({children}){
+  const [screen,      setScreen]      = useState("gate");
+  const [personality, setPersonality] = useState(defaultP);
+  const [ctx,         setCtx]         = useState(CONTEXTS[0]);
+  const [raw,         setRaw]         = useState("");
+  const [result,      setResult]      = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [genError,    setGenError]    = useState(null);
+  const [history,     setHistory]     = useState([]);
+  const [usageCount,  setUsageCount]  = useState(()=>todayUsage());
+  const [showPaywall, setShowPaywall] = useState(false);
 
-    function ActiveLogo({ logoId, compact = false }) {
-      switch (logoId) {
-        case "filter":  return <LogoFilter compact={compact} />;
-        case "cmark":   return <LogoCMark compact={compact} />;
-        case "wave":    return <LogoWave compact={compact} />;
-        case "minimal": return <LogoWordmark compact={compact} />;
-        default:        return <LogoSerif compact={compact} />;
+  useEffect(()=>{
+    try{
+      const ageOk=getAgeGateAccepted();
+      const tosOk=getToSAccepted();
+      if(ageOk&&tosOk){
+        const p=localStorage.getItem("clr_p");
+        if(p){const j=JSON.parse(p);if(j?.completed){setPersonality(j);setScreen("main");return;}}
+        setScreen("splash");
       }
-    }
+      const h=localStorage.getItem("clr_h");
+      if(h)setHistory(JSON.parse(h)||[]);
+    }catch(_){}
+  },[]);
 
-    // ════════════════════════════════════════════════════════════════════
-    //  VIEWMODEL — AppProvider
-    // ════════════════════════════════════════════════════════════════════
+  const go=useCallback((to)=>setScreen(to),[]);
 
-    const AppContext    = createContext(null);
-    const LayoutContext = createContext("mobile");
-    const useApp    = () => useContext(AppContext);
-    const useLayout = () => useContext(LayoutContext);
+  const completeOnboarding=useCallback((ans)=>{
+    const full=buildPersonality(ans);
+    setPersonality(full);
+    try{localStorage.setItem("clr_p",JSON.stringify(full));}catch(_){}
+    setScreen("reveal");
+  },[]);
 
-    function AppProvider({ children }) {
-      const [screen,          setScreen]          = useState(SCREENS.ONBOARDING);
-      const [personality,     setPersonality]     = useState(defaultPersonality);
-      const [selectedContext, setSelectedContext] = useState(CONTEXT_TYPES.CORPORATE);
-      const [rawThought,      setRawThought]      = useState("");
-      const [suggestions,     setSuggestions]     = useState(null);
-      const [history,         setHistory]         = useState([]);
-      const [activeLogo,      setActiveLogo]      = useState("serif");
-      const prev = useRef(SCREENS.ONBOARDING);
+  const generate=useCallback(async(currentRaw,currentCtx,currentPersonality)=>{
+    if(!currentRaw.trim())return;
+    const used=todayUsage();
+    if(used>=FREE_LIMIT){setShowPaywall(true);return;}
+    setResult(null);setGenError(null);setLoading(true);setScreen("output");
+    try{
+      if(!GROQ_KEY||GROQ_KEY===""){
+        setGenError("No API key found. Add your GROQ_KEY to index.html on GitHub.");
+        return;
+      }
+      const arch=ARCHETYPES[currentPersonality.archetypeKey]||ARCHETYPES.qualifier;
+      const systemPrompt=[
+        "You are Clearly — a witty warm communication filter for overthinkers.",
+        "You help people say what they mean clearly, confidently, and sometimes with humour.",
+        "",
+        `USER PERSONALITY: ${currentPersonality.aiPromptSummary||"General overthinker."}`,
+        `USER ARCHETYPE: ${arch.label}`,
+        "",
+        `CONTEXT: ${currentCtx.label}`,
+        `TONE: ${currentCtx.tone}`,
+        "",
+        "LANGUAGE DETECTION RULE — VERY IMPORTANT:",
+        "Detect the language of the user input carefully.",
+        "If the user writes in English only — respond in English only.",
+        "If the user writes in Hinglish (Hindi and English mixed, or Hindi in Roman script like yaar, kya, matlab, bhai, suno, lagta hai, nahi, haan, theek hai, arre, woh, karna) — respond in Hinglish. Match their vibe. Keep it natural like young urban Indians actually text.",
+        "If the user writes in Hindi Devanagari — respond in Hindi.",
+        "Never switch languages unless the user switches first.",
+        "For Hinglish exits, make them sound natural like: Yaar sorry, mujhe abhi jaana padega.",
+        "",
+        EXIT_CATEGORIES,
+        "",
+        "IF EXIT SCENARIO: set isExit true. Give 5 exit excuses matched to user personality.",
+        `Exit style for this user: ${arch.exitStyle}`,
+        "Each excuse must sound like something this specific person would say. Vary meaningfully. MAX 2 sentences each.",
+        "",
+        "IF NORMAL REWRITE: set isExit false. Give 5 rewrites.",
+        "Be warm, human, occasionally witty. Never robotic or LinkedIn-ish.",
+        "Read intention not just words. Soften negatives. Sharpen positives.",
+        "Fix their weakness: over-explaining means cut ruthlessly, terse means add warmth, hedging means be direct, blunt means soften.",
+        "Each of 5 variations must feel meaningfully different in tone, length, angle. Keep SHORT and punchy.",
+        "",
+        "RESPOND WITH ONLY RAW JSON. No markdown. No explanation. No code fences:",
+        '{"isExit":false,"variations":[{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"},{"refined":"text","toneLabel":"A · B · C","explanation":"one line"}]}',
+      ].join("\n");
 
-      useEffect(() => {
-        try {
-          const p = localStorage.getItem("clearly_p"); if (p) { const j=JSON.parse(p); if (j?.completed) { setPersonality(j); setScreen(SCREENS.HOME); } }
-          const h = localStorage.getItem("clearly_h"); if (h) setHistory(JSON.parse(h)||[]);
-          const l = localStorage.getItem("clearly_logo"); if (l && LOGO_META[l]) setActiveLogo(l);
-        } catch(_){}
-      }, []);
+      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
+        body:JSON.stringify({
+          model:"llama-3.3-70b-versatile",
+          messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
+          max_tokens:3000,temperature:0.9,
+        }),
+      });
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message||"Groq API error");
+      const text=data.choices?.[0]?.message?.content||"";
+      if(!text)throw new Error("Empty response from Groq");
+      let clean=text.replace(/```json|```/g,"").trim();
+      let parsed;
+      try{parsed=JSON.parse(clean);}
+      catch(e){
+        const matches=[...clean.matchAll(/\{"refined"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"toneLabel"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g)];
+        if(matches.length>0){
+          parsed={isExit:clean.includes('"isExit":true'),variations:matches.map(m=>({refined:m[1],toneLabel:m[2],explanation:m[3]}))};
+        }else{throw new Error("Response was cut off. Please try again.");}
+      }
+      const variations=parsed.variations||[parsed];
+      const isExit=parsed.isExit||false;
+      const newCount=incrementUsage();
+      setUsageCount(newCount);
+      setResult({variations,currentIndex:0,isExit,...variations[0]});
+      setHistory(h=>{
+        const entry={id:Date.now(),ctx:currentCtx,raw:currentRaw,refined:variations[0].refined,toneLabel:variations[0].toneLabel,isExit,ts:new Date().toISOString()};
+        const u=[entry,...h].slice(0,30);
+        try{localStorage.setItem("clr_h",JSON.stringify(u));}catch(_){}
+        return u;
+      });
+    }catch(e){
+      setGenError("Something went wrong: "+(e.message||"check your Groq key and try again."));
+    }finally{setLoading(false);}
+  },[]);
 
-      const navigate = useCallback((to) => { prev.current=screen; setScreen(to); },[screen]);
+  const reset=useCallback(()=>{
+    setPersonality(defaultP);setResult(null);setRaw("");setGenError(null);
+    try{localStorage.removeItem("clr_p");}catch(_){}
+    setScreen("splash");
+  },[]);
 
-      const completePersonality = useCallback((ans) => {
-        const full = buildPersonality(ans);
-        setPersonality(full);
-        try { localStorage.setItem("clearly_p", JSON.stringify(full)); } catch(_){}
-        navigate(SCREENS.HOME);
-      }, [navigate]);
+  return(
+    <AC.Provider value={{screen,go,personality,completeOnboarding,reset,ctx,setCtx,raw,setRaw,result,setResult,loading,genError,generate,history,usageCount,showPaywall,setShowPaywall}}>
+      {children}
+    </AC.Provider>
+  );
+}
 
-      const resetPersonality = useCallback(() => {
-        setPersonality(defaultPersonality);
-        try { localStorage.removeItem("clearly_p"); } catch(_){}
-        navigate(SCREENS.ONBOARDING);
-      }, [navigate]);
+const D={
+  bg:"#0D0C0B",bg2:"#141210",surface:"#1C1917",surf2:"#252119",
+  accent:"#D4845A",accentD:"#B86B42",
+  exit:"#6B8F71",exitLight:"#1A2B1C",
+  cream:"#F0E8DC",cream2:"#B8AC9E",cream3:"#6B6259",
+  border:"rgba(240,232,220,0.08)",border2:"rgba(240,232,220,0.04)",
+  serif:"'Fraunces',Georgia,serif",sans:"'DM Sans',sans-serif",
+};
 
-      const addToHistory = useCallback((entry) => {
-        setHistory(h => {
-          const u = [entry,...h].slice(0,30);
-          try { localStorage.setItem("clearly_h", JSON.stringify(u)); } catch(_){}
-          return u;
-        });
-      }, []);
+function PBtn({children,onClick,disabled,style={}}){
+  const [h,setH]=useState(false);
+  return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+    style={{background:disabled?D.surf2:h?D.accentD:D.accent,color:disabled?D.cream3:"#fff",border:"none",borderRadius:14,padding:"16px 28px",fontFamily:D.sans,fontSize:15,fontWeight:500,cursor:disabled?"not-allowed":"pointer",transition:"all .2s",...style}}>
+    {children}
+  </button>;
+}
 
-      const updateLatestHistory = useCallback((updates) => {
-        setHistory(h => {
-          if (!h.length) return h;
-          const u = [{ ...h[0], ...updates }, ...h.slice(1)];
-          try { localStorage.setItem("clearly_h", JSON.stringify(u)); } catch(_){}
-          return u;
-        });
-      }, []);
+function GBtn({children,onClick,style={}}){
+  const [h,setH]=useState(false);
+  return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
+    style={{background:h?D.surf2:"transparent",color:D.cream2,border:`1px solid ${D.border}`,borderRadius:10,padding:"11px 20px",fontFamily:D.sans,fontSize:13,cursor:"pointer",transition:"all .2s",...style}}>
+    {children}
+  </button>;
+}
 
-      const clearHistory = useCallback(() => {
-        setHistory([]);
-        try { localStorage.removeItem("clearly_h"); } catch(_){}
-      }, []);
+function Ambient({color=D.accent}){
+  return <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:0}}>
+    <div style={{position:"absolute",width:500,height:500,borderRadius:"50%",background:`radial-gradient(circle,${color}1A 0%,transparent 70%)`,top:"50%",left:"50%",transform:"translate(-50%,-50%)",animation:"pulse 6s ease-in-out infinite"}}/>
+    <div style={{position:"absolute",width:260,height:260,borderRadius:"50%",background:`radial-gradient(circle,${color}0D 0%,transparent 70%)`,top:"12%",right:"8%",animation:"pulse 9s ease-in-out infinite reverse"}}/>
+  </div>;
+}
 
-      const changeLogo = useCallback((id) => {
-        setActiveLogo(id);
-        try { localStorage.setItem("clearly_logo", id); } catch(_){}
-      }, []);
+function NameEmailForm({onSubmit,submitting,inputBg=D.surface}){
+  const [name,setName]=useState("");
+  const [email,setEmail]=useState("");
+  const valid=name.trim()&&email.includes("@");
+  return(
+    <div style={{width:"100%"}}>
+      <input type="text" value={name} onChange={e=>setName(e.target.value)}
+        placeholder="Your name"
+        style={{width:"100%",background:inputBg,border:`1px solid ${D.border}`,borderRadius:10,padding:"12px 16px",fontFamily:D.sans,fontSize:14,color:D.cream,outline:"none",marginBottom:8}}
+      />
+      <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+        placeholder="your@email.com"
+        onKeyDown={e=>e.key==="Enter"&&valid&&onSubmit(name,email)}
+        style={{width:"100%",background:inputBg,border:`1px solid ${D.border}`,borderRadius:10,padding:"12px 16px",fontFamily:D.sans,fontSize:14,color:D.cream,outline:"none",marginBottom:10}}
+      />
+      <PBtn onClick={()=>valid&&onSubmit(name,email)} disabled={!valid||submitting} style={{width:"100%"}}>
+        {submitting?"Sending…":"Count me in →"}
+      </PBtn>
+    </div>
+  );
+}
 
-      return (
-        <AppContext.Provider value={{
-          screen, navigate, prev, SCREENS, personality, completePersonality, resetPersonality,
-          selectedContext, setSelectedContext, rawThought, setRawThought,
-          suggestions, setSuggestions,
-          history, addToHistory, updateLatestHistory, clearHistory,
-          CONTEXT_TYPES, ARCHETYPES,
-          activeLogo, changeLogo,
-        }}>
-          {children}
-        </AppContext.Provider>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  VIEWMODEL — Onboarding
-    // ════════════════════════════════════════════════════════════════════
-
-    const QUIZ = [
-      { field:"communicationStyle", question:"When stressed, how do you usually communicate?",
-        options:[{val:"over-explainer",label:"I over-explain — too much context, not enough punch"},{val:"terse",label:"I go quiet and terse — people think I'm cold"},{val:"qualifier",label:"I soften everything until the point disappears"},{val:"blunt",label:"I'm direct — sometimes too direct"}] },
-      { field:"toneDefault", question:"What's your default tone in professional settings?",
-        options:[{val:"warm-casual",label:"Warm and friendly — probably too casual"},{val:"formal",label:"Very formal, which can feel stiff"},{val:"passive",label:"Passive — I hedge a lot, use lots of 'maybe'"},{val:"direct",label:"Confident, occasionally comes off as harsh"}] },
-      { field:"mainTrigger", question:"What situations make you most likely to overthink?",
-        options:[{val:"conflict",label:"Conflict or giving difficult feedback"},{val:"romantic",label:"Romantic or social situations"},{val:"authority",label:"Talking to authority figures"},{val:"group",label:"Group settings where I'll be judged"}] },
-      { field:"afterSendFeeling", question:"After hitting send, you typically feel…",
-        options:[{val:"overshared",label:"Immediate regret — did I say too much?"},{val:"underplayed",label:"Worry — was that too cold or dismissive?"},{val:"ruminator",label:"Fine until I re-read it three times"},{val:"pre-worry",label:"Okay — the before is harder than the after"}] },
-      { field:"helpGoal", question:"What do you most want Clearly to help you with?",
-        options:[{val:"brevity",label:"Saying less — cutting fluff"},{val:"warmth",label:"Saying more — I come across as too terse"},{val:"confidence",label:"Sounding confident, not apologetic"},{val:"tone",label:"Matching the right tone to the moment"}] },
-    ];
-
-    function useOnboardingVM() {
-      const { completePersonality } = useApp();
-      const [step, setStep]     = useState(0);
-      const [answers, setAnswers] = useState({});
-      const [selected, setSel]  = useState(null);
-      const [visible, setVis]   = useState(true);
-      const totalSteps = QUIZ.length;
-      const isReveal   = step === totalSteps;
-      const built      = isReveal ? buildPersonality(answers) : null;
-
-      const anim = (cb) => { setVis(false); setTimeout(()=>{ cb(); setVis(true); },200); };
-
-      const goForward = () => {
-        if (!selected) return;
-        const a = {...answers, [QUIZ[step].field]: selected};
-        setAnswers(a);
-        anim(() => { setStep(s=>s+1); setSel(null); });
-      };
-      const goBack = () => {
-        if (!step) return;
-        anim(() => { const p=step-1; setStep(p); setSel(answers[QUIZ[p].field]||null); });
-      };
-
-      return { step, totalSteps, currentQ:QUIZ[step]||null, selected, isReveal, visible, built, selectOption:setSel, goForward, goBack, finish:()=>completePersonality(answers) };
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  VIEWMODEL — Suggestion (3 responses + ratings)
-    // ════════════════════════════════════════════════════════════════════
-
-    function useSuggestionVM() {
-      const { personality, selectedContext, rawThought, suggestions, setSuggestions, addToHistory, updateLatestHistory, history } = useApp();
-      const [loading, setLoading] = useState(false);
-      const [error,   setError]   = useState(null);
-      const [ratings, setRatings] = useState({});
-      const [feedbackText, setFeedbackText] = useState("");
-      const [feedbackSaved, setFeedbackSaved] = useState(false);
-      const [copiedIdx, setCopiedIdx] = useState(null);
-      const sessionSaved = useRef(false);
-
-      const learnedPrefs = history
-        .filter(h => h.feedback || h.preferredAngle)
-        .slice(0, 5)
-        .map(h => [
-          h.preferredAngle ? `Preferred style: ${h.preferredAngle}` : null,
-          h.feedback       ? `User note: "${h.feedback}"` : null,
-        ].filter(Boolean).join(". "))
-        .filter(Boolean)
-        .join("\n");
-
-      const run = useCallback(async () => {
-        if (!rawThought.trim()) return;
-        setLoading(true); setError(null); setSuggestions(null);
-        setRatings({}); setFeedbackText(""); setFeedbackSaved(false);
-        sessionSaved.current = false;
-        try {
-          const prefsSection = learnedPrefs
-            ? `\n\nLEARNED USER PREFERENCES (from past sessions — incorporate these):\n${learnedPrefs}`
-            : "";
-          const system = `You are Clearly — a communication assistant for overthinkers. Rewrite someone's raw thought into three meaningfully different versions for their context.\n\nPERSONALITY:\n${personality.aiPromptSummary||"Use general communication best practices."}\n\nCONTEXT: ${selectedContext.label}\nTONE: ${selectedContext.toneModifier}${prefsSection}\n\nRules: Honor their voice. Address their specific weakness. Match length to context. Remove blame, hedging, over-explanation, or bluntness per their profile.\n\nGenerate EXACTLY 3 distinct rewrites. Make each noticeably different — vary directness, warmth, length, or framing. Each needs a short one-word "angle" label (e.g. Assertive, Warm, Concise, Empathetic, Direct, Balanced).\n\nRespond ONLY with valid JSON, no markdown:\n{"responses":[{"refined":"full rewrite","toneLabel":"Word · Word · Word","explanation":"one sentence: what changed and why","angle":"OneWord"},{"refined":"...","toneLabel":"...","explanation":"...","angle":"..."},{"refined":"...","toneLabel":"...","explanation":"...","angle":"..."}]}`;
-
-          const res  = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method:"POST",
-            headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_API_KEY}`},
-            body:JSON.stringify({ model:"llama-3.3-70b-versatile", max_tokens:2000, messages:[{role:"system",content:system},{role:"user",content:rawThought}] }),
-          });
-          const data = await res.json();
-          const text = data.choices?.[0]?.message?.content || "";
-          const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
-          const responses = parsed.responses || [];
-          setSuggestions(responses);
-
-          if (responses.length && !sessionSaved.current) {
-            sessionSaved.current = true;
-            addToHistory({
-              id: Date.now(),
-              context: selectedContext,
-              raw: rawThought,
-              refined: responses[0]?.refined,
-              toneLabel: responses[0]?.toneLabel,
-              responses,
-              ratings: {},
-              feedback: "",
-              preferredAngle: null,
-              ts: new Date().toISOString(),
-            });
-          }
-        } catch(e) {
-          setError("Something went wrong. Check connection and try again.");
-        } finally {
-          setLoading(false);
-        }
-      }, [personality, selectedContext, rawThought, learnedPrefs, addToHistory]);
-
-      const saveRatings = useCallback(() => {
-        if (!suggestions || feedbackSaved) return;
-        const sorted = Object.entries(ratings).sort((a,b) => a[1]-b[1]);
-        const bestIdx = sorted.length ? parseInt(sorted[0][0]) : 0;
-        const best = suggestions[bestIdx];
-        updateLatestHistory({
-          refined: best?.refined || suggestions[0]?.refined,
-          toneLabel: best?.toneLabel,
-          ratings,
-          feedback: feedbackText.trim(),
-          preferredAngle: best?.angle || null,
-        });
-        setFeedbackSaved(true);
-      }, [suggestions, ratings, feedbackText, updateLatestHistory, feedbackSaved]);
-
-      const copyResponse = useCallback(async (text, idx) => {
-        try { await navigator.clipboard.writeText(text); setCopiedIdx(idx); setTimeout(()=>setCopiedIdx(null),2000); } catch(_){}
-      }, []);
-
-      return {
-        loading, error, ratings, setRatings, feedbackText, setFeedbackText,
-        feedbackSaved, copiedIdx,
-        generate: run,
-        regenerate: () => { setSuggestions(null); run(); },
-        saveRatings, copyResponse,
-      };
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  DESIGN TOKENS
-    // ════════════════════════════════════════════════════════════════════
-
-    const T = {
-      bg:"#F4EFE6", surface:"#FDFAF5", surface2:"#EDE8DF",
-      accent:"#B85C30", accentLight:"#F0DDD3",
-      text:"#1C1814", text2:"#7A7268", text3:"#B0A89E",
-      border:"rgba(28,24,20,0.10)", border2:"rgba(28,24,20,0.06)",
-      shadow:"0 2px 16px rgba(28,24,20,0.08)", shadowLg:"0 8px 40px rgba(28,24,20,0.14)",
-      radius:"18px", fontSerif:"'Fraunces',Georgia,serif", fontSans:"'DM Sans',sans-serif",
-      rank1:"#B85C30", rank2:"#7A7268", rank3:"#B0A89E",
-    };
-
-    // ════════════════════════════════════════════════════════════════════
-    //  SHARED PRIMITIVES
-    // ════════════════════════════════════════════════════════════════════
-
-    const Shimmer = ({w="100%",h=12,mt=0}) => <div style={{height:h,width:w,background:T.surface2,borderRadius:6,marginTop:mt,animation:"shimmer 1.8s ease-in-out infinite"}} />;
-
-    const Card = ({children,style={}}) => <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radius,padding:20,...style}}>{children}</div>;
-
-    function ActionBtn({children,onClick,ghost,disabled,style={},small=false}) {
-      return (
-        <button onClick={onClick} disabled={disabled} style={{ width:"100%", padding:small?"10px 14px":"15px 16px", background:ghost?"transparent":disabled?T.surface2:T.accent, color:ghost?T.text2:disabled?T.text3:"#fff", border:ghost?`1.5px solid ${T.border}`:"none", borderRadius:14, fontFamily:T.fontSans, fontSize:small?13:15, fontWeight:500, cursor:disabled?"not-allowed":"pointer", transition:"all .15s", ...style }}>
-          {children}
-        </button>
-      );
-    }
-
-    const BackBtn = ({label="← Back",onClick}) => <button onClick={onClick} style={{background:"none",border:"none",padding:0,fontSize:13,color:T.text2,cursor:"pointer",fontFamily:T.fontSans,marginBottom:16,display:"block"}}>{label}</button>;
-
-    const SectionLabel = ({children,mt=0}) => <div style={{fontSize:10,fontWeight:500,letterSpacing:"0.08em",textTransform:"uppercase",color:T.text3,marginBottom:12,marginTop:mt,fontFamily:T.fontSans}}>{children}</div>;
-
-    const SerifH = ({children,size=30}) => <h1 style={{fontFamily:T.fontSerif,fontSize:size,fontWeight:300,color:T.text,lineHeight:1.25,margin:0}}>{children}</h1>;
-
-    const TraitPill = ({label}) => <span style={{display:"inline-block",background:T.accentLight,color:T.accent,border:`1px solid rgba(184,92,48,0.2)`,borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:500,fontFamily:T.fontSans,marginRight:6,marginBottom:6}}>{label}</span>;
-
-    function ContextChip({ctx}) {
-      return <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.accentLight,border:`1px solid rgba(184,92,48,0.2)`,borderRadius:20,padding:"5px 14px",fontSize:12,color:T.accent,fontWeight:500,fontFamily:T.fontSans,marginBottom:14}}>{ctx.icon} {ctx.label}</div>;
-    }
-
-    function PlaceholderCard() {
-      return (
-        <Card style={{marginBottom:10,padding:"14px 18px",opacity:0.5}}>
-          <Shimmer w="40%" h={10}/>
-          <Shimmer mt={8} w="90%" h={10}/>
-          <Shimmer mt={6} w="70%" h={10}/>
-        </Card>
-      );
-    }
-
-    function HistoryEntry({entry,compact=false}) {
-      const ts  = new Date(entry.ts||Date.now());
-      const ago = ((Date.now()-ts)/60000)<60 ? `${Math.round((Date.now()-ts)/60000)}m ago` : ts.toLocaleDateString("en",{month:"short",day:"numeric"});
-      const rankedCount = Object.keys(entry.ratings||{}).length;
-      return (
-        <Card style={{marginBottom:10,padding:"14px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <span style={{fontSize:11,color:T.text3,fontFamily:T.fontSans}}>{entry.context?.icon} {entry.context?.label}</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              {rankedCount>0&&<span style={{fontSize:10,color:T.accent,fontFamily:T.fontSans,fontWeight:500}}>ranked ✓</span>}
-              <span style={{fontSize:11,color:T.text3,fontFamily:T.fontSans}}>{ago}</span>
-            </div>
-          </div>
-          <div style={{fontSize:13,color:T.text,fontFamily:T.fontSans,lineHeight:1.55}}>{entry.refined?.slice(0,compact?90:140)}{(entry.refined?.length||0)>(compact?90:140)?"…":""}</div>
-          {entry.feedback&&<div style={{marginTop:6,fontSize:11,color:T.text3,fontFamily:T.fontSans,fontStyle:"italic"}}>"{entry.feedback.slice(0,60)}{entry.feedback.length>60?"…":""}"</div>}
-        </Card>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  RESPONSE CARD
-    // ════════════════════════════════════════════════════════════════════
-
-    function ResponseCard({ suggestion, index, ratings, setRatings, copiedIdx, onCopy, isWeb }) {
-      const rank = ratings[index];
-      const rankColors = { 1:T.rank1, 2:T.rank2, 3:T.rank3 };
-      const rankBg     = { 1:T.accentLight, 2:"rgba(122,114,104,0.1)", 3:"rgba(176,168,158,0.1)" };
-      const rankLabels = { 1:"Best fit", 2:"Middle", 3:"Least fit" };
-
-      const handleRank = (r) => {
-        setRatings(prev => {
-          const next = { ...prev };
-          Object.keys(next).forEach(k => { if (next[k] === r) delete next[k]; });
-          if (prev[index] === r) delete next[index];
-          else next[index] = r;
-          return next;
-        });
-      };
-
-      const isCopied = copiedIdx === index;
-      const isBest   = rank === 1;
-
-      return (
-        <div style={{
-          background: isBest ? T.accentLight : T.surface,
-          border: `1.5px solid ${rank ? rankColors[rank] : T.border}`,
-          borderRadius: T.radius,
-          padding: 18,
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          transition: "all .2s ease",
-          flex: isWeb ? 1 : undefined,
-          minWidth: 0,
-        }}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:rank?rankColors[rank]:T.text3,fontFamily:T.fontSans}}>{suggestion.angle}</span>
-            {rank && (
-              <span style={{fontSize:10,fontWeight:600,fontFamily:T.fontSans,color:rankColors[rank],background:rankBg[rank],padding:"3px 10px",borderRadius:20}}>{rankLabels[rank]}</span>
-            )}
-          </div>
-          <div style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,color:T.text2,fontFamily:T.fontSans}}>
-            <div style={{width:5,height:5,background:"#4CAF7D",borderRadius:"50%",flexShrink:0}}/>
-            {suggestion.toneLabel}
-          </div>
-          <div style={{fontSize:14,lineHeight:1.72,color:T.text,fontFamily:T.fontSans,flex:1}}>{suggestion.refined}</div>
-          {suggestion.explanation && (
-            <div style={{fontSize:11,color:T.text3,fontFamily:T.fontSans,lineHeight:1.5,fontStyle:"italic"}}>✦ {suggestion.explanation}</div>
-          )}
-          <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>
-            <div style={{display:"flex",gap:4,flex:1}}>
-              {[1,2,3].map(r => (
-                <button key={r} onClick={() => handleRank(r)} style={{flex:1,padding:"6px 4px",borderRadius:10,border:`1.5px solid ${ratings[index]===r?rankColors[r]:T.border}`,background:ratings[index]===r?rankColors[r]:"transparent",color:ratings[index]===r?"#fff":T.text3,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.fontSans,transition:"all .15s",lineHeight:1}}>#{r}</button>
-              ))}
-            </div>
-            <button onClick={() => onCopy(suggestion.refined, index)} style={{padding:"6px 14px",borderRadius:10,border:`1.5px solid ${isCopied?T.accent:T.border}`,background:isCopied?T.accentLight:"transparent",color:isCopied?T.accent:T.text2,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.fontSans,transition:"all .15s",flexShrink:0}}>
-              {isCopied ? "Copied ✓" : "Copy"}
-            </button>
-          </div>
+function AgeGate(){
+  const {go}=useApp();
+  const [v,setV]=useState(false);
+  useEffect(()=>{setTimeout(()=>setV(true),100);},[]);
+  const accept=()=>{try{localStorage.setItem("clr_age","1");}catch(_){}go("tos");};
+  const decline=()=>{alert("Sorry, Clearly is only available to users aged 13 and above.");};
+  return(
+    <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",padding:"40px 28px",textAlign:"center"}}>
+      <Ambient/>
+      <div style={{position:"relative",zIndex:1,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all .6s ease",maxWidth:320,width:"100%"}}>
+        <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${D.accent},${D.accentD})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 8px 32px ${D.accent}40`}}>
+          <span style={{fontSize:26,color:"#fff"}}>✦</span>
         </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  FEEDBACK BOX
-    // ════════════════════════════════════════════════════════════════════
-
-    function FeedbackBox({ ratings, feedbackText, setFeedbackText, onSave, saved, total }) {
-      const ranked = Object.keys(ratings).length;
-      const allRanked = ranked === total;
-
-      return (
-        <div style={{marginTop:20,background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radius,padding:18}}>
-          <SectionLabel>Help Clearly learn your style</SectionLabel>
-          <p style={{fontSize:12,color:T.text2,fontFamily:T.fontSans,margin:"0 0 12px",lineHeight:1.55}}>
-            Rank each response above using #1 #2 #3, then leave a note if you'd like. Clearly will adapt future suggestions to your preferences.
-          </p>
-          <div style={{display:"flex",gap:6,marginBottom:14}}>
-            {Array.from({length:total}).map((_,i) => {
-              const r = ratings[i];
-              const colors = { 1:T.rank1, 2:T.rank2, 3:T.rank3 };
-              return (
-                <div key={i} style={{flex:1,height:4,borderRadius:2,background:r?colors[r]:T.surface2,transition:"background .2s"}}/>
-              );
-            })}
-          </div>
-          <div style={{fontSize:11,color:allRanked?T.accent:T.text3,fontFamily:T.fontSans,fontWeight:allRanked?500:400,marginBottom:12}}>
-            {allRanked ? "✓ All responses ranked" : `${ranked}/${total} ranked — rank all to save`}
-          </div>
-          <textarea
-            value={feedbackText}
-            onChange={e => setFeedbackText(e.target.value)}
-            placeholder='Optional: What worked? What felt off? e.g. "I liked how brief #1 was"'
-            style={{width:"100%",height:76,background:T.bg,border:`1.5px solid ${T.border}`,borderRadius:12,padding:14,fontFamily:T.fontSans,fontSize:13,color:T.text,resize:"none",outline:"none",lineHeight:1.55,boxSizing:"border-box",transition:"border-color .15s"}}
-            onFocus={e=>e.target.style.borderColor=T.accent}
-            onBlur={e=>e.target.style.borderColor=T.border}
-          />
-          <div style={{marginTop:10}}>
-            <ActionBtn onClick={onSave} disabled={saved || !allRanked} small>
-              {saved ? "Preferences saved ✓" : !allRanked ? `Rank all ${total} to save` : "Save rankings & feedback →"}
-            </ActionBtn>
-          </div>
+        <h1 style={{fontFamily:D.serif,fontSize:36,fontWeight:300,color:D.cream,lineHeight:1.15,letterSpacing:"-0.01em",marginBottom:16}}>
+          Before you<br/><em style={{fontStyle:"italic",color:D.accent}}>filter…</em>
+        </h1>
+        <p style={{fontFamily:D.sans,fontSize:15,color:D.cream2,lineHeight:1.65,marginBottom:32}}>
+          Clearly is for people aged <strong style={{color:D.cream}}>13 and above.</strong><br/>Are you 13 or older?
+        </p>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <PBtn onClick={accept} style={{width:"100%",padding:"16px"}}>Yes, I am 13 or older →</PBtn>
+          <GBtn onClick={decline} style={{width:"100%",padding:"14px"}}>No, I am under 13</GBtn>
         </div>
-      );
-    }
+        <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,marginTop:20,lineHeight:1.6}}>
+          By continuing you confirm this app is not therapy, not professional advice, and should be used at your own risk.
+        </p>
+      </div>
+    </div>
+  );
+}
 
-    // ════════════════════════════════════════════════════════════════════
-    //  STATUS BAR (mobile)
-    // ════════════════════════════════════════════════════════════════════
-
-    function StatusBar() {
-      const [t,setT] = useState(()=>{const n=new Date();return `${n.getHours()}:${String(n.getMinutes()).padStart(2,"0")}`;});
-      useEffect(()=>{const id=setInterval(()=>{const n=new Date();setT(`${n.getHours()}:${String(n.getMinutes()).padStart(2,"0")}`);},10000);return()=>clearInterval(id);},[]);
-      return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 24px 0",flexShrink:0}}><span style={{fontSize:13,fontWeight:500,color:T.text2,fontFamily:T.fontSans}}>{t}</span><span style={{fontSize:11,color:T.text2,fontFamily:T.fontSans}}>▲▲▲ ◉</span></div>;
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  BOTTOM NAV (mobile)
-    // ════════════════════════════════════════════════════════════════════
-
-    function BottomNav({active}) {
-      const {navigate,SCREENS} = useApp();
-      const btn = (scr,icon,lbl) => {
-        const on = active===scr;
-        return <button onClick={()=>navigate(scr)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"8px 20px",cursor:"pointer",background:"none",border:"none",fontFamily:T.fontSans,borderRadius:12}}>
-          <span style={{fontSize:19,transform:on?"scale(1.12)":"scale(1)",transition:"transform .15s"}}>{icon}</span>
-          <span style={{fontSize:10,fontWeight:500,letterSpacing:"0.04em",textTransform:"uppercase",color:on?T.accent:T.text3}}>{lbl}</span>
-        </button>;
-      };
-      return (
-        <div style={{height:72,background:T.surface,borderTop:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-around",padding:"0 8px 8px",flexShrink:0}}>
-          {btn(SCREENS.HOME,"⌂","Home")}
-          <button onClick={()=>navigate(SCREENS.INPUT)} style={{width:52,height:52,background:T.accent,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",border:"none",fontSize:24,color:"#fff",cursor:"pointer",boxShadow:"0 4px 16px rgba(184,92,48,0.38)"}}>＋</button>
-          {btn(SCREENS.PROFILE,"◎","Profile")}
-        </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  WEB SIDEBAR
-    // ════════════════════════════════════════════════════════════════════
-
-    function WebSidebar() {
-      const {screen,navigate,SCREENS,personality,ARCHETYPES,activeLogo} = useApp();
-      const arch = personality.completed ? ARCHETYPES[personality.archetypeKey] : null;
-      const navItem = (scr,icon,lbl) => {
-        const on = screen===scr;
-        return <button onClick={()=>navigate(scr)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"10px 14px",background:on?T.accentLight:"none",border:"none",borderRadius:10,cursor:"pointer",fontFamily:T.fontSans,fontSize:14,color:on?T.accent:T.text2,fontWeight:on?500:400,textAlign:"left",transition:"all .15s"}}>
-          <span style={{fontSize:17}}>{icon}</span>{lbl}
-        </button>;
-      };
-      return (
-        <div style={{width:240,flexShrink:0,background:T.surface,borderRight:`1px solid ${T.border}`,display:"flex",flexDirection:"column",padding:"28px 16px",gap:4}}>
-          <div style={{marginBottom:28,paddingLeft:6}}>
-            <ActiveLogo logoId={activeLogo} />
-          </div>
-          {navItem(SCREENS.HOME,"⌂","Home")}
-          {navItem(SCREENS.INPUT,"✦","New thought")}
-          {navItem(SCREENS.PROFILE,"◎","Profile")}
-          <div style={{flex:1}} />
-          {arch && <div style={{padding:"14px 10px",borderTop:`1px solid ${T.border}`,paddingTop:16}}>
-            <div style={{fontSize:20,marginBottom:6}}>{arch.emoji}</div>
-            <div style={{fontSize:12,fontWeight:500,color:T.text,fontFamily:T.fontSans}}>{arch.label}</div>
-            <div style={{fontSize:11,color:T.text3,fontFamily:T.fontSans,marginTop:2}}>{arch.traits.join(" · ")}</div>
-          </div>}
-        </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  ONBOARDING SCREEN
-    // ════════════════════════════════════════════════════════════════════
-
-    function ProgressBar({step,total}) {
-      return <div style={{display:"flex",gap:5,marginBottom:28}}>{Array.from({length:total}).map((_,i)=><div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?T.accent:T.surface2,transition:"background .3s"}} />)}</div>;
-    }
-
-    function QuizOption({label,selected,onClick}) {
-      return <div onClick={onClick} style={{padding:"13px 16px",border:`1.5px solid ${selected?T.accent:T.border}`,background:selected?T.accentLight:T.bg,borderRadius:12,marginBottom:10,fontSize:14,color:selected?T.text:T.text2,cursor:"pointer",transition:"all .15s",fontFamily:T.fontSans,lineHeight:1.45,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <span>{label}</span>
-        {selected&&<span style={{color:T.accent,fontSize:16,flexShrink:0,marginLeft:8}}>✓</span>}
-      </div>;
-    }
-
-    function PersonalityReveal({profile,onFinish}) {
-      const [in_,setIn] = useState(false);
-      useEffect(()=>{const t=setTimeout(()=>setIn(true),80);return()=>clearTimeout(t);},[]);
-      const arch = ARCHETYPES[profile.archetypeKey]||ARCHETYPES.qualifier;
-      const rows = [
-        ["Under stress",profile.communicationStyle?.replace("-"," ")||"—"],
-        ["Default tone",profile.toneDefault?.replace("-"," ")||"—"],
-        ["Biggest trigger",profile.mainTrigger||"—"],
-        ["After-send feeling",profile.afterSendFeeling||"—"],
-        ["Primary goal",profile.helpGoal||"—"],
-      ];
-      return (
-        <div style={{flex:1,overflowY:"auto",padding:"0 24px 32px",scrollbarWidth:"none"}}>
-          <div style={{textAlign:"center",paddingTop:48,paddingBottom:32,opacity:in_?1:0,transform:in_?"translateY(0)":"translateY(16px)",transition:"all .5s ease"}}>
-            <div style={{fontSize:52,marginBottom:16}}>{arch.emoji}</div>
-            <div style={{fontSize:11,fontWeight:500,letterSpacing:"0.1em",textTransform:"uppercase",color:T.text3,fontFamily:T.fontSans,marginBottom:8}}>Your communication style</div>
-            <div style={{fontFamily:T.fontSerif,fontSize:32,fontWeight:300,color:T.text,lineHeight:1.2,marginBottom:12}}>{arch.label}</div>
-            <div style={{fontSize:14,color:T.text2,fontFamily:T.fontSans,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>{arch.tagline}</div>
-            <div style={{marginTop:16}}>{arch.traits.map(t=><TraitPill key={t} label={t}/>)}</div>
-          </div>
-          <Card style={{marginBottom:20,opacity:in_?1:0,transition:"all .5s ease .15s"}}>
-            <SectionLabel>Your best move</SectionLabel>
-            <div style={{fontSize:14,color:T.text,fontFamily:T.fontSans,lineHeight:1.6}}>{arch.tip}</div>
-          </Card>
-          <Card style={{padding:"0 20px",marginBottom:24,opacity:in_?1:0,transition:"all .5s ease .25s"}}>
-            {rows.map(([l,v],i,a)=><div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 0",borderBottom:i<a.length-1?`1px solid ${T.border2}`:"none"}}><span style={{fontSize:12,color:T.text3,fontFamily:T.fontSans}}>{l}</span><span style={{fontSize:13,color:T.text,fontFamily:T.fontSans,fontWeight:500,textTransform:"capitalize"}}>{v}</span></div>)}
-          </Card>
-          <ActionBtn onClick={onFinish} style={{opacity:in_?1:0,transition:"opacity .5s ease .35s"}}>Let's start filtering →</ActionBtn>
-        </div>
-      );
-    }
-
-    function OnboardingScreen() {
-      const vm = useOnboardingVM();
-      const {activeLogo} = useApp();
-      const layout = useLayout();
-      if (vm.isReveal && vm.built) return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <PersonalityReveal profile={vm.built} onFinish={vm.finish} />
-        </div>
-      );
-      const slide = {opacity:vm.visible?1:0,transform:vm.visible?"translateX(0)":"translateX(18px)",transition:"opacity .2s ease,transform .2s ease"};
-      return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:layout==="web"?"0 0 32px":"0 24px 32px",scrollbarWidth:"none",maxWidth:layout==="web"?560:undefined,alignSelf:layout==="web"?"center":undefined,width:"100%"}}>
-            {vm.step===0&&<div style={{textAlign:"center",paddingTop:layout==="web"?60:40,marginBottom:32}}>
-              <div style={{display:"flex",justifyContent:"center",marginBottom:10}}>
-                <ActiveLogo logoId={activeLogo} />
-              </div>
-              <div style={{marginTop:8,fontSize:13,color:T.text2,fontWeight:300,fontFamily:T.fontSans,letterSpacing:"0.05em"}}>filter your thoughts before they land</div>
-            </div>}
-            <div style={{paddingTop:vm.step>0?24:0}}>
-              {vm.step>0&&<BackBtn onClick={vm.goBack}/>}
-              <ProgressBar step={vm.step} total={vm.totalSteps}/>
-            </div>
-            <div style={slide}>
-              <div style={{fontSize:10,fontWeight:500,letterSpacing:"0.08em",textTransform:"uppercase",color:T.text3,fontFamily:T.fontSans,marginBottom:10}}>Question {vm.step+1} of {vm.totalSteps}</div>
-              <h2 style={{fontFamily:T.fontSerif,fontSize:layout==="web"?24:21,fontWeight:400,color:T.text,lineHeight:1.45,marginBottom:20}}>{vm.currentQ?.question}</h2>
-              {vm.currentQ?.options.map(o=><QuizOption key={o.val} label={o.label} selected={vm.selected===o.val} onClick={()=>vm.selectOption(o.val)}/>)}
-            </div>
-            <ActionBtn onClick={vm.goForward} disabled={!vm.selected} style={{marginTop:8}}>{vm.step<vm.totalSteps-1?"Next →":"See my profile →"}</ActionBtn>
-            {vm.step===0&&<div style={{textAlign:"center",marginTop:16,fontSize:12,color:T.text3,fontFamily:T.fontSans}}>5 quick questions · takes ~1 min</div>}
-          </div>
-        </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  HOME SCREEN
-    // ════════════════════════════════════════════════════════════════════
-
-    function HomeScreen() {
-      const {navigate,SCREENS,setSelectedContext,CONTEXT_TYPES,history,personality,ARCHETYPES} = useApp();
-      const layout = useLayout();
-      const arch = personality.completed ? ARCHETYPES[personality.archetypeKey] : null;
-
-      const handleCtx = (ctx) => { setSelectedContext(ctx); navigate(SCREENS.INPUT); };
-
-      const ctxCard = (ctx) => (
-        <div key={ctx.id} onClick={()=>handleCtx(ctx)} style={{background:T.surface,border:`1.5px solid ${T.border}`,borderRadius:T.radius,padding:layout==="web"?"24px 20px":"20px 16px",cursor:"pointer",transition:"all .18s",display:"flex",flexDirection:"column",gap:8}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=T.shadow;}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="none";}}>
-          <span style={{fontSize:layout==="web"?28:24}}>{ctx.icon}</span>
-          <span style={{fontSize:14,fontWeight:500,color:T.text,lineHeight:1.3,fontFamily:T.fontSans}}>{ctx.label}</span>
-          <span style={{fontSize:11,color:T.text3,fontWeight:300,fontFamily:T.fontSans}}>{ctx.sub}</span>
-        </div>
-      );
-
-      if (layout==="web") return (
-        <div style={{flex:1,overflowY:"auto",padding:"40px 48px",scrollbarWidth:"none"}}>
-          {arch&&<div style={{background:T.accentLight,border:`1px solid rgba(184,92,48,0.18)`,borderRadius:T.radius,padding:"16px 20px",marginBottom:32,display:"flex",alignItems:"center",gap:14}}>
-            <span style={{fontSize:28}}>{arch.emoji}</span>
-            <div><div style={{fontSize:14,fontWeight:500,color:T.text,fontFamily:T.fontSans}}>Hey, {arch.label}.</div><div style={{fontSize:13,color:T.text2,fontFamily:T.fontSans,marginTop:2}}>{arch.tip}</div></div>
-          </div>}
-          <SerifH size={36}>What's the <em style={{fontStyle:"italic",color:T.accent}}>situation?</em></SerifH>
-          <p style={{marginTop:8,marginBottom:32,fontSize:14,color:T.text2,fontFamily:T.fontSans}}>Pick a context — we'll filter your words for it.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:40}}>
-            {Object.values(CONTEXT_TYPES).map(ctxCard)}
-          </div>
-          {history.length>0&&<>
-            <SectionLabel>Recent sessions</SectionLabel>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              {history.slice(0,4).map(h=><HistoryEntry key={h.id} entry={h}/>)}
-            </div>
-          </>}
-        </div>
-      );
-
-      return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"0 24px",scrollbarWidth:"none"}}>
-            <div style={{paddingTop:24,marginBottom:20}}>
-              <SerifH>What's the<br/><em style={{fontStyle:"italic",color:T.accent}}>situation?</em></SerifH>
-              <p style={{marginTop:6,fontSize:13,color:T.text2,fontWeight:300,fontFamily:T.fontSans}}>Pick a context — we'll filter your words for it.</p>
-            </div>
-            <SectionLabel>Choose your context</SectionLabel>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:24}}>
-              {Object.values(CONTEXT_TYPES).map(ctxCard)}
-            </div>
-            <SectionLabel>Recent sessions</SectionLabel>
-            {history.length===0?<><div style={{height:12}}/><PlaceholderCard/><PlaceholderCard/></>:history.slice(0,3).map(h=><HistoryEntry key={h.id} entry={h} compact/>)}
-            <div style={{height:24}}/>
-          </div>
-          <BottomNav active={SCREENS.HOME}/>
-        </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  INPUT SCREEN
-    // ════════════════════════════════════════════════════════════════════
-
-    function ToneTipBanner({ctx,personality}) {
-      if (!personality?.communicationStyle) return null;
-      const tip = getToneTip(ctx?.id, personality.communicationStyle);
-      return (
-        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start"}}>
-          <span style={{fontSize:14,flexShrink:0}}>💡</span>
-          <span style={{fontSize:12,color:T.text2,fontFamily:T.fontSans,lineHeight:1.5}}><strong style={{color:T.text,fontWeight:500}}>Tip for you:</strong> {tip}</span>
-        </div>
-      );
-    }
-
-    function InputScreen() {
-      const {navigate,SCREENS,selectedContext,rawThought,setRawThought,personality} = useApp();
-      const layout = useLayout();
-      const MAX = 800;
-      const inner = (
-        <>
-          <BackBtn onClick={()=>navigate(SCREENS.HOME)}/>
-          <ContextChip ctx={selectedContext}/>
-          <h1 style={{fontFamily:T.fontSerif,fontSize:layout==="web"?32:26,fontWeight:300,color:T.text,lineHeight:1.3,margin:0}}>
-            Just <em style={{fontStyle:"italic",color:T.accent}}>say it.</em>{layout==="web"?" We'll give you options.":"\nWe'll give you options."}
+function ToSScreen(){
+  const {go}=useApp();
+  const [scrolled,setScrolled]=useState(false);
+  const [v,setV]=useState(false);
+  const ref=useRef(null);
+  useEffect(()=>{setTimeout(()=>setV(true),100);},[]);
+  const handleScroll=()=>{
+    if(!ref.current)return;
+    const {scrollTop,scrollHeight,clientHeight}=ref.current;
+    if(scrollTop+clientHeight>=scrollHeight-40)setScrolled(true);
+  };
+  const accept=()=>{try{localStorage.setItem("clr_tos","1");}catch(_){}go("splash");};
+  const sections=[
+    {title:"What is Clearly?",body:`Clearly is a free AI-powered communication helper that rewrites and filters your thoughts to help you communicate more clearly. It is a beta product operated by an individual developer.\n\nContact: ${CONTACT_EMAIL}`},
+    {title:"⚠️ Not Therapy. Not Advice.",body:"Clearly is NOT therapy, counselling, medical advice, legal advice, or professional advice of any kind. It is a light creative tool for everyday communication situations. Nothing in this app should be treated as professional guidance.\n\nIf you are experiencing a mental health crisis, relationship crisis, or legal issue, please speak to a qualified professional.\n\nUse Clearly entirely at your own risk."},
+    {title:"Age Requirement",body:"You must be 13 years of age or older to use Clearly. By using this app you confirm you meet this requirement. If you are under 13, please stop using the app immediately."},
+    {title:"Limitation of Liability",body:"To the fullest extent permitted by law, Clearly and its developer shall not be liable for any direct, indirect, incidental, special, or consequential damages resulting from your use of, or inability to use, this app.\n\nThis includes but is not limited to: relationship damage, professional consequences, emotional distress, or any other outcome arising from following a suggestion made by this app.\n\nYou use Clearly entirely at your own risk."},
+    {title:"Privacy Policy",body:`We take your privacy seriously. Here is exactly what happens with your data:\n\n• Your messages are sent to Groq (groq.com) for AI processing. Groq's privacy policy applies.\n\n• We do not store your messages on any server. Once processed, they are gone.\n\n• Your personality profile is stored only in your browser's local storage on your own device. We cannot access it.\n\n• If you submit your name and email for beta updates, it is stored in a Google Sheet accessible only to the developer at ${CONTACT_EMAIL}. We will never sell, share, or spam your information.\n\n• We do not use tracking cookies. We do not run ads. We do not sell data.\n\nFor any questions: ${CONTACT_EMAIL}`},
+    {title:"Beta Product",body:"Clearly is currently in free beta. The product is still being developed, may have bugs, and features may change.\n\nDuring beta, Clearly is completely free within daily limits. Any future pricing will be communicated clearly before any charges apply."},
+    {title:"Intellectual Property",body:"All content, design, and code in Clearly belongs to its developer. You may not copy, reproduce, or redistribute any part of Clearly without written permission."},
+    {title:"Changes to These Terms",body:`We may update these terms at any time. Continued use of the app after changes means you accept the new terms.\n\nLast updated: ${new Date().toLocaleDateString("en-IN",{year:"numeric",month:"long",day:"numeric"})}`},
+  ];
+  return(
+    <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%"}}>
+      <Ambient/>
+      <div style={{position:"relative",zIndex:1,padding:"28px 24px 16px",flexShrink:0}}>
+        <div style={{opacity:v?1:0,transition:"opacity .5s ease"}}>
+          <p style={{fontFamily:D.sans,fontSize:11,color:D.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Before you start</p>
+          <h1 style={{fontFamily:D.serif,fontSize:28,fontWeight:300,color:D.cream,lineHeight:1.2,marginBottom:4}}>
+            Terms & <em style={{fontStyle:"italic",color:D.accent}}>Privacy</em>
           </h1>
-          <p style={{marginTop:8,marginBottom:16,fontSize:13,color:T.text2,fontWeight:300,fontFamily:T.fontSans}}>Dump your raw thoughts — messy is fine. You'll get 3 versions to choose from.</p>
-          <ToneTipBanner ctx={selectedContext} personality={personality}/>
-          <textarea value={rawThought} onChange={e=>setRawThought(e.target.value.slice(0,MAX))}
-            placeholder="Just start typing… I want to say that the project is late but it's not really my fault because Sarah didn't send the files and I think the deadline was unrealistic anyway…"
-            style={{width:"100%",height:layout==="web"?220:200,background:T.surface,border:`1.5px solid ${T.border}`,borderRadius:T.radius,padding:18,fontFamily:T.fontSans,fontSize:15,color:T.text,resize:"none",outline:"none",lineHeight:1.65,transition:"border-color .15s",boxSizing:"border-box"}}
-            onFocus={e=>e.target.style.borderColor=T.accent} onBlur={e=>e.target.style.borderColor=T.border}/>
-          <div style={{textAlign:"right",fontSize:11,color:T.text3,marginTop:6,fontFamily:T.fontSans,marginBottom:16}}>{rawThought.length}/{MAX}</div>
-          <ActionBtn onClick={()=>navigate(SCREENS.OUTPUT)} disabled={!rawThought.trim()}>Filter my thoughts →</ActionBtn>
-          {layout!=="web"&&<ActionBtn ghost onClick={()=>navigate(SCREENS.HOME)} style={{marginTop:10}}>Cancel</ActionBtn>}
-        </>
-      );
-
-      if (layout==="web") return (
-        <div style={{flex:1,overflowY:"auto",padding:"40px 48px",scrollbarWidth:"none"}}>
-          <div style={{maxWidth:620}}>{inner}</div>
+          <p style={{fontFamily:D.sans,fontSize:12,color:D.cream3,lineHeight:1.5}}>Please read and scroll to the bottom to accept.</p>
         </div>
-      );
-      return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"24px 24px 32px",scrollbarWidth:"none"}}>{inner}</div>
-          <BottomNav active={null}/>
+      </div>
+      <div ref={ref} onScroll={handleScroll} style={{flex:1,overflowY:"auto",padding:"0 24px",scrollbarWidth:"none",position:"relative",zIndex:1}}>
+        {sections.map((s,i)=>(
+          <div key={i} style={{marginBottom:16,background:D.surface,border:`1px solid ${D.border}`,borderRadius:14,padding:"16px 18px",animation:"fadeIn .4s ease both",animationDelay:`${i*0.05}s`}}>
+            <p style={{fontFamily:D.sans,fontSize:11,fontWeight:500,color:D.accent,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.title}</p>
+            <p style={{fontFamily:D.sans,fontSize:13,color:D.cream2,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{s.body}</p>
+          </div>
+        ))}
+        <div style={{height:20}}/>
+      </div>
+      <div style={{padding:"16px 24px",borderTop:`1px solid ${D.border}`,background:D.bg,flexShrink:0,position:"relative",zIndex:1}}>
+        {!scrolled&&<p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,textAlign:"center",marginBottom:10}}>↓ Scroll to read everything before accepting</p>}
+        <PBtn onClick={accept} disabled={!scrolled} style={{width:"100%"}}>
+          {scrolled?"I agree — let's go →":"Scroll to accept"}
+        </PBtn>
+      </div>
+    </div>
+  );
+}
+
+function BetaBanner(){
+  const [dismissed,setDismissed]=useState(()=>{try{return localStorage.getItem("clr_beta")==="1";}catch(_){return false;}});
+  const [showForm,setShowForm]=useState(false);
+  const [submitted,setSubmitted]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  if(dismissed)return null;
+  const dismiss=()=>{try{localStorage.setItem("clr_beta","1");}catch(_){}setDismissed(true);};
+  const handleSubmit=async(name,email)=>{
+    setSubmitting(true);
+    try{await submitToGoogle(name,email);}catch(_){}
+    setSubmitted(true);setSubmitting(false);
+    setTimeout(()=>dismiss(),2500);
+  };
+  return(
+    <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,background:D.bg2,borderTop:`1px solid ${D.border}`,padding:"14px 20px",animation:"fadeIn .4s ease"}}>
+      {!showForm&&!submitted&&(
+        <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+          <span style={{fontSize:16,flexShrink:0}}>🎉</span>
+          <div style={{flex:1}}>
+            <p style={{fontFamily:D.sans,fontSize:12,fontWeight:500,color:D.cream,marginBottom:3}}>Clearly is free during beta!</p>
+            <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,lineHeight:1.5}}>Want early access to premium features? Drop your details.</p>
+          </div>
+          <div style={{display:"flex",gap:8,flexShrink:0}}>
+            <button onClick={()=>setShowForm(true)} style={{background:D.accent,color:"#fff",border:"none",borderRadius:8,padding:"6px 12px",fontFamily:D.sans,fontSize:11,fontWeight:500,cursor:"pointer"}}>Notify me</button>
+            <button onClick={dismiss} style={{background:"none",border:"none",color:D.cream3,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>×</button>
+          </div>
         </div>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  OUTPUT SCREEN
-    // ════════════════════════════════════════════════════════════════════
-
-    function LoadingSkeleton() {
-      return (
-        <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
-          {[0,1,2].map(i=>(
-            <div key={i} style={{flex:1,minWidth:200,background:T.surface,border:`1px solid ${T.border}`,borderRadius:T.radius,padding:18}}>
-              <Shimmer w="40%" h={10}/>
-              <Shimmer mt={10} w="70%" h={10}/>
-              <Shimmer mt={10}/>
-              <Shimmer mt={8}/>
-              <Shimmer mt={8} w="80%"/>
-              <Shimmer mt={14} w="90%" h={10}/>
-            </div>
-          ))}
+      )}
+      {showForm&&!submitted&&(
+        <div style={{animation:"fadeIn .3s ease"}}>
+          <p style={{fontFamily:D.sans,fontSize:12,fontWeight:500,color:D.cream,marginBottom:12}}>Drop your details — we will reach out first 🙌</p>
+          <NameEmailForm onSubmit={handleSubmit} submitting={submitting} inputBg={D.surface}/>
+          <button onClick={dismiss} style={{background:"none",border:"none",color:D.cream3,cursor:"pointer",fontFamily:D.sans,fontSize:11,marginTop:10,padding:0}}>No thanks</button>
         </div>
-      );
-    }
-
-    function OutputScreen() {
-      const {navigate,SCREENS,rawThought,selectedContext,suggestions,personality,ARCHETYPES} = useApp();
-      const vm = useSuggestionVM();
-      const layout = useLayout();
-      const arch = personality.completed ? ARCHETYPES[personality.archetypeKey] : null;
-      const isWeb = layout === "web";
-
-      useEffect(()=>{ if (!suggestions) vm.generate(); },[]);
-
-      const beforeBlock = (
-        <div style={{marginBottom: isWeb ? 0 : 16}}>
-          <SectionLabel>Your raw thought</SectionLabel>
-          <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:16,fontSize:13,lineHeight:1.65,color:T.text2,fontStyle:"italic",fontFamily:T.fontSans}}>{rawThought||"Your raw thought will appear here…"}</div>
+      )}
+      {submitted&&(
+        <div style={{textAlign:"center",animation:"fadeIn .3s ease"}}>
+          <p style={{fontFamily:D.sans,fontSize:13,color:D.cream,marginBottom:4}}>✓ You are on the list!</p>
+          <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3}}>We will be in touch when premium launches.</p>
         </div>
-      );
+      )}
+    </div>
+  );
+}
 
-      const responsesBlock = (
-        <div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <SectionLabel>3 filtered versions</SectionLabel>
-            {suggestions && !vm.loading && (
-              <button onClick={vm.regenerate} style={{background:"none",border:"none",fontSize:12,color:T.text3,cursor:"pointer",fontFamily:T.fontSans,padding:0}}>↺ Regenerate</button>
+function Paywall(){
+  const {setShowPaywall}=useApp();
+  const [showForm,setShowForm]=useState(false);
+  const [submitted,setSubmitted]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const handleSubmit=async(name,email)=>{
+    setSubmitting(true);
+    try{await submitToGoogle(name,email);}catch(_){}
+    setSubmitted(true);setSubmitting(false);
+  };
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:24,padding:32,maxWidth:340,width:"100%",textAlign:"center",animation:"fadeIn .3s ease"}}>
+        <div style={{fontSize:36,marginBottom:16}}>✦</div>
+        <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,marginBottom:10,lineHeight:1.3}}>
+          You've used your<br/><em style={{fontStyle:"italic",color:D.accent}}>5 free filters.</em>
+        </h2>
+        {!submitted?(
+          <>
+            <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.65,marginBottom:20}}>
+              Come back tomorrow for 5 more — or drop your details to get early access when premium launches.
+            </p>
+            {!showForm?(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <PBtn onClick={()=>setShowForm(true)} style={{width:"100%"}}>Notify me when premium launches →</PBtn>
+                <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>See you tomorrow</button>
+              </div>
+            ):(
+              <div style={{animation:"fadeIn .3s ease",textAlign:"left"}}>
+                <NameEmailForm onSubmit={handleSubmit} submitting={submitting} inputBg={D.bg}/>
+                <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:12,color:D.cream3,cursor:"pointer",marginTop:10,display:"block",width:"100%",textAlign:"center"}}>No thanks</button>
+              </div>
             )}
+          </>
+        ):(
+          <div style={{animation:"fadeIn .3s ease"}}>
+            <p style={{fontFamily:D.sans,fontSize:15,color:D.cream,marginBottom:6}}>✓ You are on the list!</p>
+            <p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,marginBottom:20,lineHeight:1.6}}>We will reach out when premium is ready.</p>
+            <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>Close</button>
           </div>
-          {vm.loading ? <LoadingSkeleton/> :
-           vm.error   ? <Card style={{borderColor:"rgba(184,92,48,0.3)"}}><div style={{fontSize:13,color:T.accent,fontFamily:T.fontSans}}>{vm.error}</div></Card> :
-           suggestions ? (
-             <div style={{display:"flex",gap:14,flexDirection: isWeb ? "row" : "column"}}>
-               {suggestions.map((s,i) => (
-                 <ResponseCard
-                   key={i}
-                   suggestion={s}
-                   index={i}
-                   ratings={vm.ratings}
-                   setRatings={vm.setRatings}
-                   copiedIdx={vm.copiedIdx}
-                   onCopy={vm.copyResponse}
-                   isWeb={isWeb}
-                 />
-               ))}
-             </div>
-           ) : (
-             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:14,padding:16,fontSize:14,color:T.text3,fontFamily:T.fontSans}}>Generating your options…</div>
-           )
-          }
+        )}
+        <div style={{marginTop:24,padding:"12px 14px",background:D.bg,borderRadius:10,border:`1px solid ${D.border}`}}>
+          <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,lineHeight:1.6}}>
+            ⚠️ Clearly is not therapy or professional advice. Use at your own risk. Contact: {CONTACT_EMAIL}
+          </p>
         </div>
-      );
+      </div>
+    </div>
+  );
+}
 
-      if (isWeb) return (
-        <div style={{flex:1,overflowY:"auto",padding:"40px 48px",scrollbarWidth:"none"}}>
-          <BackBtn label="← Edit thought" onClick={()=>navigate(SCREENS.INPUT)}/>
-          <SerifH size={32}>Here are your <em style={{fontStyle:"italic",color:T.accent}}>options.</em></SerifH>
-          <p style={{marginTop:6,marginBottom:24,fontSize:13,color:T.text2,fontFamily:T.fontSans}}>Rank them #1 #2 #3 — Clearly will learn from your choices.</p>
-          <div style={{display:"grid",gridTemplateColumns:"280px 1fr",gap:32,alignItems:"start",marginBottom:24}}>
-            {beforeBlock}
-            <div style={{display:"flex",flexDirection:"column",gap:0}}>{responsesBlock}</div>
-          </div>
-          {suggestions && !vm.loading && (
-            <FeedbackBox
-              ratings={vm.ratings}
-              feedbackText={vm.feedbackText}
-              setFeedbackText={vm.setFeedbackText}
-              onSave={vm.saveRatings}
-              saved={vm.feedbackSaved}
-              total={suggestions.length}
-            />
-          )}
-          {arch&&<div style={{marginTop:24,borderTop:`1px solid ${T.border}`,paddingTop:20}}>
-            <SectionLabel>From your profile</SectionLabel>
-            <Card style={{display:"flex",gap:12,alignItems:"flex-start",maxWidth:400}}>
-              <span style={{fontSize:22}}>{arch.emoji}</span>
-              <div><div style={{fontSize:13,fontWeight:500,color:T.text,fontFamily:T.fontSans}}>{arch.label}</div><div style={{fontSize:12,color:T.text2,fontFamily:T.fontSans,marginTop:3,lineHeight:1.5}}>{arch.tip}</div></div>
-            </Card>
-          </div>}
-          <ActionBtn ghost onClick={()=>navigate(SCREENS.HOME)} style={{marginTop:24,maxWidth:180}}>Done</ActionBtn>
+function Splash(){
+  const {go}=useApp();
+  const [v,setV]=useState(false);
+  useEffect(()=>{setTimeout(()=>setV(true),100);},[]);
+  return(
+    <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",padding:"40px 32px",textAlign:"center"}}>
+      <Ambient/>
+      <div style={{position:"relative",zIndex:1,opacity:v?1:0,transform:v?"translateY(0)":"translateY(24px)",transition:"all .7s ease"}}>
+        <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${D.accent},${D.accentD})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 8px 32px ${D.accent}40`}}>
+          <span style={{fontSize:28,color:"#fff"}}>✦</span>
         </div>
-      );
-
-      return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"24px 24px 32px",scrollbarWidth:"none"}}>
-            <BackBtn label="← Edit" onClick={()=>navigate(SCREENS.INPUT)}/>
-            <SerifH size={24}>Your <em style={{fontStyle:"italic",color:T.accent}}>options.</em></SerifH>
-            <p style={{marginTop:4,marginBottom:16,fontSize:12,color:T.text2,fontFamily:T.fontSans}}>Rank them to help Clearly learn your style.</p>
-            {beforeBlock}
-            {responsesBlock}
-            {suggestions && !vm.loading && (
-              <FeedbackBox
-                ratings={vm.ratings}
-                feedbackText={vm.feedbackText}
-                setFeedbackText={vm.setFeedbackText}
-                onSave={vm.saveRatings}
-                saved={vm.feedbackSaved}
-                total={suggestions.length}
-              />
-            )}
-            <ActionBtn ghost onClick={()=>navigate(SCREENS.HOME)} style={{marginTop:14}}>Done</ActionBtn>
-          </div>
-          <BottomNav active={null}/>
+        <div style={{fontFamily:D.serif,fontSize:52,fontWeight:300,color:D.cream,lineHeight:1,letterSpacing:"-0.02em",marginBottom:14}}>
+          Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em>
         </div>
-      );
-    }
+        <div style={{display:"inline-block",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:20,padding:"4px 14px",marginBottom:16}}>
+          <span style={{fontFamily:D.sans,fontSize:11,color:D.accent,fontWeight:500,letterSpacing:"0.06em"}}>FREE BETA</span>
+        </div>
+        <p style={{fontFamily:D.sans,fontSize:17,color:D.cream2,lineHeight:1.65,maxWidth:280,margin:"0 auto 10px",fontWeight:300}}>
+          A filter for overthinkers.<br/>Say what you mean — clearly.
+        </p>
+        <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,maxWidth:260,margin:"0 auto 36px",lineHeight:1.6}}>
+          Not therapy. Not advice. A helpful filter for everyday situations. Use at your own risk.
+        </p>
+        <PBtn onClick={()=>go("quiz")} style={{width:"100%",maxWidth:260,padding:"18px 32px",fontSize:16}}>
+          Get started — it's free
+        </PBtn>
+        <p style={{fontFamily:D.sans,fontSize:12,color:D.cream3,marginTop:16}}>5 questions · 5 free filters/day · no sign up</p>
+      </div>
+    </div>
+  );
+}
 
-    // ════════════════════════════════════════════════════════════════════
-    //  PROFILE SCREEN
-    // ════════════════════════════════════════════════════════════════════
-
-    function LogoPicker() {
-      const { activeLogo, changeLogo } = useApp();
-      return (
-        <Card style={{marginBottom:20}}>
-          <SectionLabel>Logo style</SectionLabel>
-          <p style={{fontSize:12,color:T.text2,fontFamily:T.fontSans,margin:"0 0 14px",lineHeight:1.5}}>Pick the wordmark that feels most like you.</p>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {Object.entries(LOGO_META).map(([id, meta]) => {
-              const isActive = activeLogo === id;
-              return (
-                <div key={id} onClick={() => changeLogo(id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderRadius:12,cursor:"pointer",border:`1.5px solid ${isActive?T.accent:T.border}`,background:isActive?T.accentLight:T.bg,transition:"all .15s"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:14}}>
-                    <ActiveLogo logoId={id} compact />
+function Quiz(){
+  const {completeOnboarding}=useApp();
+  const [step,setStep]=useState(0);
+  const [answers,setAnswers]=useState({});
+  const [sel,setSel]=useState(null);
+  const [animIn,setAnimIn]=useState(true);
+  const [dir,setDir]=useState(1);
+  const total=QUIZ.length;
+  const current=QUIZ[step];
+  const anim=(d,cb)=>{setAnimIn(false);setDir(d);setTimeout(()=>{cb();setAnimIn(true);},240);};
+  const choose=(val)=>{
+    setSel(val);
+    setTimeout(()=>{
+      const a={...answers,[current.field]:val};
+      setAnswers(a);
+      if(step<total-1){anim(1,()=>{setStep(s=>s+1);setSel(null);});}
+      else{completeOnboarding(a);}
+    },400);
+  };
+  const back=()=>{if(!step)return;anim(-1,()=>{const p=step-1;setStep(p);setSel(answers[QUIZ[p].field]||null);});};
+  const slide={opacity:animIn?1:0,transform:animIn?"translateX(0)":`translateX(${dir*20}px)`,transition:"opacity .24s ease,transform .24s ease"};
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
+      <Ambient/>
+      <div style={{position:"relative",zIndex:1,padding:"28px 28px 0",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <button onClick={back} style={{background:"none",border:"none",color:step===0?"transparent":D.cream2,cursor:step===0?"default":"pointer",fontFamily:D.sans,fontSize:13,padding:0,transition:"color .2s"}}>← back</button>
+          <span style={{fontFamily:D.sans,fontSize:12,color:D.cream3,letterSpacing:"0.04em"}}>{step+1} / {total}</span>
+        </div>
+        <div style={{height:2,background:D.border,borderRadius:2,overflow:"hidden"}}>
+          <div style={{height:"100%",width:`${((step+1)/total)*100}%`,background:D.accent,borderRadius:2,transition:"width .4s ease"}}/>
+        </div>
+      </div>
+      <div style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"center",padding:"32px 28px 28px",position:"relative",zIndex:1}}>
+        <div style={slide}>
+          <p style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,lineHeight:1.4,marginBottom:32,letterSpacing:"-0.01em"}}>{current.q}</p>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {current.opts.map(opt=>{
+              const on=sel===opt.val;
+              return(
+                <div key={opt.val} onClick={()=>choose(opt.val)}
+                  style={{padding:"15px 18px",background:on?`${D.accent}1A`:D.surface,border:`1px solid ${on?D.accent:D.border}`,borderRadius:14,cursor:"pointer",transition:"all .18s",display:"flex",alignItems:"center",gap:14}}>
+                  <div style={{width:18,height:18,borderRadius:"50%",border:`1.5px solid ${on?D.accent:D.cream3}`,background:on?D.accent:"transparent",flexShrink:0,transition:"all .18s",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {on&&<div style={{width:6,height:6,borderRadius:"50%",background:"#fff"}}/>}
                   </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:11,fontWeight:500,color:isActive?T.accent:T.text,fontFamily:T.fontSans}}>{meta.name}</div>
-                    <div style={{fontSize:10,color:T.text3,fontFamily:T.fontSans}}>{meta.desc}</div>
-                  </div>
-                  {isActive && <span style={{marginLeft:8,color:T.accent,fontSize:14,flexShrink:0}}>✓</span>}
+                  <span style={{fontFamily:D.sans,fontSize:14,color:on?D.cream:D.cream2,lineHeight:1.5,fontWeight:on?500:400}}>{opt.text}</span>
                 </div>
               );
             })}
           </div>
-        </Card>
-      );
-    }
+        </div>
+      </div>
+    </div>
+  );
+}
 
-    function ProfileScreen() {
-      const {navigate,SCREENS,personality,history,resetPersonality,clearHistory,ARCHETYPES} = useApp();
-      const layout = useLayout();
-      const arch = personality.completed ? ARCHETYPES[personality.archetypeKey] : null;
-      const rows = personality.completed ? [
-        ["Communication style",personality.communicationStyle?.replace("-"," ")||"—"],
-        ["Default tone",personality.toneDefault?.replace("-"," ")||"—"],
-        ["Main trigger",personality.mainTrigger||"—"],
-        ["After-send feeling",personality.afterSendFeeling||"—"],
-        ["Primary goal",personality.helpGoal||"—"],
-      ] : [];
-
-      const ratedSessions = history.filter(h => Object.keys(h.ratings||{}).length > 0);
-      const topAngles = ratedSessions
-        .map(h => {
-          const sorted = Object.entries(h.ratings||{}).sort((a,b)=>a[1]-b[1]);
-          if (!sorted.length) return null;
-          const bestIdx = parseInt(sorted[0][0]);
-          return h.responses?.[bestIdx]?.angle;
-        })
-        .filter(Boolean);
-      const angleCounts = topAngles.reduce((acc,a) => { acc[a]=(acc[a]||0)+1; return acc; }, {});
-      const sortedAngles = Object.entries(angleCounts).sort((a,b)=>b[1]-a[1]).slice(0,3);
-
-      const profileCard = (
-        <Card style={{marginBottom:20}}>
-          <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:arch?20:0}}>
-            <div style={{width:56,height:56,background:T.accentLight,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{arch?arch.emoji:"✦"}</div>
-            <div>
-              <div style={{fontSize:16,fontWeight:500,color:T.text,fontFamily:T.fontSans}}>{arch?arch.label:"Not set up yet"}</div>
-              <div style={{fontSize:12,color:T.text2,marginTop:2,fontFamily:T.fontSans}}>{history.length} session{history.length!==1?"s":""} · {ratedSessions.length} rated · {personality.completed?"Profile complete":"Quiz pending"}</div>
-            </div>
-          </div>
-          {arch&&<div style={{marginBottom:16}}>{arch.traits.map(t=><TraitPill key={t} label={t}/>)}</div>}
-          {arch&&<div style={{fontSize:13,color:T.text2,fontFamily:T.fontSans,lineHeight:1.55,fontStyle:"italic",borderTop:`1px solid ${T.border2}`,paddingTop:14}}>{arch.tagline}</div>}
-          {sortedAngles.length>0&&(
-            <div style={{marginTop:14,borderTop:`1px solid ${T.border2}`,paddingTop:14}}>
-              <div style={{fontSize:10,fontWeight:500,letterSpacing:"0.08em",textTransform:"uppercase",color:T.text3,fontFamily:T.fontSans,marginBottom:8}}>Your preferred styles</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {sortedAngles.map(([angle,count])=>(
-                  <span key={angle} style={{background:T.accentLight,color:T.accent,border:`1px solid rgba(184,92,48,0.2)`,borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:500,fontFamily:T.fontSans}}>
-                    {angle} ×{count}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </Card>
-      );
-
-      const answersCard = (
-        <Card style={{padding:"0 20px",marginBottom:20}}>
-          {rows.length>0?rows.map(([l,v],i,a)=><div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 0",borderBottom:i<a.length-1?`1px solid ${T.border2}`:"none"}}>
-            <span style={{fontSize:12,color:T.text3,fontFamily:T.fontSans}}>{l}</span>
-            <span style={{fontSize:13,color:T.text,fontFamily:T.fontSans,fontWeight:500,textTransform:"capitalize"}}>{v}</span>
-          </div>):<div style={{padding:"16px 0",fontSize:13,color:T.text3,fontFamily:T.fontSans}}>Complete the quiz to see your profile.</div>}
-        </Card>
-      );
-
-      const historySection = (
-        <>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,marginTop:layout==="web"?0:4}}>
-            <SectionLabel>Session history</SectionLabel>
-            {history.length>0&&<button onClick={clearHistory} style={{background:"none",border:"none",fontSize:11,color:T.text3,cursor:"pointer",fontFamily:T.fontSans}}>Clear all</button>}
-          </div>
-          {history.length===0?<div style={{fontSize:13,color:T.text3,fontFamily:T.fontSans,padding:"8px 0"}}>No sessions yet. Start filtering!</div>:history.map(h=><HistoryEntry key={h.id} entry={h}/>)}
-        </>
-      );
-
-      if (layout==="web") return (
-        <div style={{flex:1,overflowY:"auto",padding:"40px 48px",scrollbarWidth:"none"}}>
-          <SerifH size={36}>Your <em style={{fontStyle:"italic",color:T.accent}}>profile</em></SerifH>
-          <p style={{marginTop:6,marginBottom:32,fontSize:14,color:T.text2,fontFamily:T.fontSans}}>Personality shapes every suggestion. Your ratings make them smarter.</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:32,alignItems:"start"}}>
-            <div>
-              {profileCard}{answersCard}
-              <LogoPicker/>
-              <ActionBtn ghost onClick={resetPersonality}>Retake personality quiz</ActionBtn>
-            </div>
-            <div>{historySection}</div>
+function Reveal(){
+  const {go,personality}=useApp();
+  const arch=ARCHETYPES[personality.archetypeKey]||ARCHETYPES.qualifier;
+  const [phase,setPhase]=useState(0);
+  useEffect(()=>{
+    const t1=setTimeout(()=>setPhase(1),150);
+    const t2=setTimeout(()=>setPhase(2),650);
+    const t3=setTimeout(()=>setPhase(3),1150);
+    return()=>{clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);};
+  },[]);
+  const f=(show,delay="0s")=>({opacity:show?1:0,transform:show?"translateY(0)":"translateY(16px)",transition:`all .6s ease ${delay}`});
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",overflowY:"auto"}}>
+      <Ambient color={arch.color}/>
+      <div style={{position:"relative",zIndex:1,width:"100%"}}>
+        <div style={{...f(phase>=1),marginBottom:24}}>
+          <div style={{width:80,height:80,borderRadius:"50%",background:`${arch.color}22`,border:`1.5px solid ${arch.color}60`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:`0 0 48px ${arch.color}30`}}>
+            <span style={{fontSize:36}}>{arch.emoji}</span>
           </div>
         </div>
-      );
-
-      return (
-        <div style={{display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"0 24px",scrollbarWidth:"none"}}>
-            <div style={{paddingTop:24,marginBottom:20}}>
-              <SerifH>Your <em style={{fontStyle:"italic",color:T.accent}}>profile</em></SerifH>
-              <p style={{marginTop:6,fontSize:13,color:T.text2,fontWeight:300,fontFamily:T.fontSans}}>Personality shapes every suggestion.</p>
-            </div>
-            {profileCard}{answersCard}
-            <LogoPicker/>
-            <SectionLabel mt={4}>Session history</SectionLabel>
-            {history.length===0?<div style={{fontSize:13,color:T.text3,fontFamily:T.fontSans,marginBottom:12}}>No sessions yet.</div>:history.slice(0,5).map(h=><HistoryEntry key={h.id} entry={h} compact/>)}
-            {history.length>0&&<button onClick={clearHistory} style={{background:"none",border:"none",fontSize:12,color:T.text3,cursor:"pointer",fontFamily:T.fontSans,marginBottom:8}}>Clear history</button>}
-            <ActionBtn ghost onClick={resetPersonality} style={{marginTop:4,marginBottom:32}}>Retake personality quiz</ActionBtn>
-          </div>
-          <BottomNav active={SCREENS.PROFILE}/>
+        <div style={{...f(phase>=2)}}>
+          <p style={{fontFamily:D.sans,fontSize:11,fontWeight:500,letterSpacing:"0.12em",textTransform:"uppercase",color:D.cream3,marginBottom:8}}>You are</p>
+          <h1 style={{fontFamily:D.serif,fontSize:36,fontWeight:300,color:D.cream,lineHeight:1.1,letterSpacing:"-0.01em",marginBottom:14}}>{arch.label}</h1>
+          <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.65,maxWidth:300,margin:"0 auto"}}>{arch.tagline}</p>
         </div>
-      );
-    }
+        <div style={{...f(phase>=3),marginTop:28}}>
+          <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:20}}>
+            {arch.traits.map(t=><span key={t} style={{fontFamily:D.sans,fontSize:11,fontWeight:500,color:arch.color,background:`${arch.color}18`,border:`1px solid ${arch.color}40`,borderRadius:20,padding:"4px 12px"}}>{t}</span>)}
+          </div>
+          <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:14,padding:"14px 18px",marginBottom:20,textAlign:"left"}}>
+            <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Your move</p>
+            <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.6}}>{arch.tip}</p>
+          </div>
+          <PBtn onClick={()=>go("main")} style={{width:"100%"}}>Start filtering →</PBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-    // ════════════════════════════════════════════════════════════════════
-    //  SHELLS
-    // ════════════════════════════════════════════════════════════════════
-
-    function ScreenRouter() {
-      const {screen,SCREENS} = useApp();
-      const map = {
-        [SCREENS.ONBOARDING]:<OnboardingScreen/>,
-        [SCREENS.HOME]:<HomeScreen/>,
-        [SCREENS.INPUT]:<InputScreen/>,
-        [SCREENS.OUTPUT]:<OutputScreen/>,
-        [SCREENS.PROFILE]:<ProfileScreen/>,
-      };
-      return (
-        <>
-          {Object.entries(map).map(([k,el])=>(
-            <div key={k} style={{position:"absolute",inset:0,opacity:screen===k?1:0,transform:screen===k?"translateY(0)":"translateY(10px)",transition:"opacity .28s ease,transform .28s ease",pointerEvents:screen===k?"all":"none",display:"flex",flexDirection:"column"}}>
-              {el}
+function Main(){
+  const {personality,ctx,setCtx,raw,setRaw,generate,reset,usageCount,showPaywall,setShowPaywall}=useApp();
+  const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
+  const [showP,setShowP]=useState(false);
+  const MAX=800;
+  const remaining=Math.max(0,FREE_LIMIT-usageCount);
+  const handleFilter=()=>generate(raw,ctx,personality);
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
+      {showPaywall&&<Paywall/>}
+      <Ambient/>
+      <div style={{position:"relative",zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 24px 0",flexShrink:0}}>
+        <div style={{fontFamily:D.serif,fontSize:22,fontWeight:300,color:D.cream,letterSpacing:"-0.01em",display:"flex",alignItems:"center",gap:8}}>
+          Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em>
+          <span style={{fontFamily:D.sans,fontSize:9,color:D.accent,letterSpacing:"0.08em",textTransform:"uppercase",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:8,padding:"2px 6px"}}>BETA</span>
+        </div>
+        {arch&&(
+          <button onClick={()=>setShowP(p=>!p)} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:20,padding:"6px 14px 6px 10px",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
+            <span style={{fontSize:15}}>{arch.emoji}</span>
+            <span style={{fontFamily:D.sans,fontSize:12,color:D.cream2,fontWeight:500}}>{arch.label}</span>
+          </button>
+        )}
+      </div>
+      {showP&&(
+        <div style={{position:"absolute",top:66,right:20,zIndex:10,background:D.bg2,border:`1px solid ${D.border}`,borderRadius:16,padding:20,width:230,boxShadow:"0 16px 48px #00000080"}}>
+          <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Your profile</p>
+          {[["Style",personality.communicationStyle?.replace("-"," ")||"—"],["Tone",personality.toneDefault?.replace("-"," ")||"—"],["Trigger",personality.mainTrigger||"—"],["Goal",personality.helpGoal||"—"]].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${D.border2}`}}>
+              <span style={{fontFamily:D.sans,fontSize:12,color:D.cream3}}>{l}</span>
+              <span style={{fontFamily:D.sans,fontSize:12,color:D.cream,fontWeight:500,textTransform:"capitalize"}}>{v}</span>
             </div>
           ))}
-        </>
-      );
-    }
-
-    function MobileShell() {
-      return (
-        <LayoutContext.Provider value="mobile">
-          <div style={{width:"100%",maxWidth:420,height:780,background:T.bg,borderRadius:32,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",boxShadow:"0 24px 64px rgba(28,24,20,0.22),0 2px 8px rgba(28,24,20,0.12)",margin:"0 auto",flexShrink:0}}>
-            <StatusBar/>
-            <div style={{flex:1,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-              <ScreenRouter/>
-            </div>
-          </div>
-        </LayoutContext.Provider>
-      );
-    }
-
-    function WebShell() {
-      const {screen,SCREENS} = useApp();
-      const showSidebar = screen!==SCREENS.ONBOARDING;
-      return (
-        <LayoutContext.Provider value="web">
-          <div style={{width:"100%",height:"100%",background:T.bg,display:"flex",overflow:"hidden"}}>
-            {showSidebar&&<WebSidebar/>}
-            <div style={{flex:1,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column"}}>
-              <ScreenRouter/>
-            </div>
-          </div>
-        </LayoutContext.Provider>
-      );
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  ROOT
-    // ════════════════════════════════════════════════════════════════════
-
-    function App() {
-      const [mode,setMode] = useState("mobile");
-
-      return (
-        <div style={{minHeight:"100vh",background:"#D9D2C7",display:"flex",flexDirection:"column",fontFamily:"'DM Sans',sans-serif"}}>
-          <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300;1,9..144,400&family=DM+Sans:wght@300;400;500&display=swap');
-            @keyframes shimmer{0%,100%{opacity:.5}50%{opacity:1}}
-            *{box-sizing:border-box;}
-            textarea::placeholder{color:#B0A89E;font-style:italic;}
-            ::-webkit-scrollbar{display:none;}
-          `}</style>
-
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"16px 0",flexShrink:0}}>
-            {["mobile","web"].map(m=>(
-              <button key={m} onClick={()=>setMode(m)} style={{padding:"7px 20px",borderRadius:20,border:`1.5px solid ${mode===m?"#B85C30":"rgba(28,24,20,0.10)"}`,background:mode===m?"#B85C30":"transparent",color:mode===m?"#fff":"#7A7268",fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"'DM Sans',sans-serif",transition:"all .15s",letterSpacing:"0.03em"}}>
-                {m==="mobile"?"📱 Mobile":"🖥 Web"}
-              </button>
-            ))}
-          </div>
-
-          {mode==="mobile"?(
-            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 16px 32px"}}>
-              <AppProvider><MobileShell/></AppProvider>
-            </div>
-          ):(
-            <div style={{flex:1,display:"flex",overflow:"hidden",margin:"0 32px 32px",borderRadius:20,boxShadow:"0 16px 48px rgba(28,24,20,0.18)"}}>
-              <AppProvider><WebShell/></AppProvider>
-            </div>
-          )}
+          <button onClick={()=>{setShowP(false);reset();}} style={{marginTop:14,fontFamily:D.sans,fontSize:12,color:D.cream3,background:"none",border:"none",cursor:"pointer",padding:0}}>Retake quiz →</button>
         </div>
-      );
-    }
+      )}
+      <div style={{flex:1,overflowY:"auto",padding:"24px 24px 120px",position:"relative",zIndex:1,display:"flex",flexDirection:"column",scrollbarWidth:"none"}}>
+        <div style={{marginBottom:20}}>
+          <h2 style={{fontFamily:D.serif,fontSize:30,fontWeight:300,color:D.cream,lineHeight:1.25,letterSpacing:"-0.01em",marginBottom:6}}>
+            What do you<br/>want to <em style={{fontStyle:"italic",color:D.accent}}>say?</em>
+          </h2>
+          {arch&&<p style={{fontFamily:D.sans,fontSize:13,color:D.cream3}}>We'll filter it for you, {arch.label.toLowerCase()}.</p>}
+        </div>
+        <div style={{marginBottom:18}}>
+          <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>Situation</p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {CONTEXTS.map(c=>{
+              const on=ctx.id===c.id;
+              return <button key={c.id} onClick={()=>setCtx(c)}
+                style={{padding:"8px 16px",background:on?D.accent:D.surface,border:`1px solid ${on?D.accent:D.border}`,borderRadius:20,fontFamily:D.sans,fontSize:13,fontWeight:on?500:400,color:on?"#fff":D.cream2,cursor:"pointer",transition:"all .18s"}}>
+                {c.label}
+              </button>;
+            })}
+          </div>
+          <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,marginTop:6}}>{ctx.sub}</p>
+        </div>
+        <div style={{flex:1,display:"flex",flexDirection:"column",gap:12}}>
+          <textarea value={raw} onChange={e=>setRaw(e.target.value.slice(0,MAX))}
+            placeholder={"Just start typing, don't overthink it…\n\nI want to tell my manager the deadline isn't realistic but I don't want to seem difficult and maybe I'm wrong but Sarah also hasn't sent the files and…"}
+            style={{flex:1,minHeight:180,background:D.surface,border:`1px solid ${D.border}`,borderRadius:16,padding:"18px 20px",fontFamily:D.sans,fontSize:15,color:D.cream,resize:"none",outline:"none",lineHeight:1.7,transition:"border-color .2s",scrollbarWidth:"none"}}
+            onFocus={e=>e.target.style.borderColor=`${D.accent}80`}
+            onBlur={e=>e.target.style.borderColor=D.border}
+          />
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <span style={{fontFamily:D.sans,fontSize:11,color:D.cream3}}>{raw.length}/{MAX}</span>
+              <span style={{fontFamily:D.sans,fontSize:11,color:remaining<=1?D.accent:D.cream3,marginLeft:10}}>
+                {remaining} filter{remaining!==1?"s":""} left today
+              </span>
+            </div>
+            <PBtn onClick={handleFilter} disabled={!raw.trim()||remaining===0} style={{padding:"13px 24px",fontSize:14}}>
+              Filter it →
+            </PBtn>
+          </div>
+        </div>
+      </div>
+      <BetaBanner/>
+    </div>
+  );
+}
 
-    // Mount the app
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
+function Output(){
+  const {go,ctx,raw,result,setResult,loading,genError,generate,personality,showPaywall}=useApp();
+  const [copied,setCopied]=useState(false);
+  const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
+  const isExit=result?.isExit||false;
+  const copy=async()=>{
+    if(!result?.refined)return;
+    try{await navigator.clipboard.writeText(result.refined);setCopied(true);setTimeout(()=>setCopied(false),2200);}catch(_){}
+  };
+  const nextVariation=()=>{
+    if(!result?.variations)return;
+    const next=(result.currentIndex+1)%result.variations.length;
+    const v=result.variations[next];
+    setResult({...result,currentIndex:next,...v});
+  };
+  const total=result?.variations?.length||1;
+  const Dots=()=>(
+    <div style={{display:"flex",gap:5,justifyContent:"center",marginBottom:18}}>
+      {Array.from({length:total}).map((_,i)=>(
+        <div key={i} onClick={()=>{const v=result.variations[i];setResult({...result,currentIndex:i,...v});}}
+          style={{width:i===result?.currentIndex?18:6,height:6,borderRadius:3,background:i===result?.currentIndex?(isExit?D.exit:D.accent):D.border,transition:"all .25s",cursor:"pointer"}}/>
+      ))}
+    </div>
+  );
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
+      {showPaywall&&<Paywall/>}
+      <Ambient color={isExit?D.exit:arch?.color||D.accent}/>
+      <div style={{position:"relative",zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 24px 0",flexShrink:0}}>
+        <button onClick={()=>go("main")} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream2,cursor:"pointer",padding:0}}>← Edit</button>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {isExit&&<span style={{fontSize:11,color:D.exit,fontFamily:D.sans,fontWeight:500,background:`${D.exit}18`,border:`1px solid ${D.exit}40`,borderRadius:20,padding:"2px 10px"}}>Exit mode</span>}
+          <span style={{fontFamily:D.sans,fontSize:11,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{ctx.label}</span>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"20px 24px 36px",position:"relative",zIndex:1,scrollbarWidth:"none"}}>
+        {loading&&(
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"70%",gap:16}}>
+            <div style={{width:36,height:36,borderRadius:"50%",border:`2px solid ${D.border}`,borderTop:`2px solid ${D.accent}`,animation:"spin 1s linear infinite"}}/>
+            <p style={{fontFamily:D.sans,fontSize:13,color:D.cream3}}>Filtering your thought…</p>
+          </div>
+        )}
+        {!loading&&genError&&(
+          <div style={{padding:24,background:D.surface,borderRadius:16,border:`1px solid ${D.border}`,marginTop:20}}>
+            <p style={{fontFamily:D.sans,fontSize:14,color:"#E08080",lineHeight:1.6,marginBottom:16}}>{genError}</p>
+            <GBtn onClick={()=>generate(raw,ctx,personality)}>Try again</GBtn>
+          </div>
+        )}
+        {!loading&&!genError&&result&&(
+          <div>
+            <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,lineHeight:1.25,letterSpacing:"-0.01em",marginBottom:6}}>
+              {isExit?"Here's your escape plan.":<>Here's what to <em style={{fontStyle:"italic",color:D.accent}}>say.</em></>}
+            </h2>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,marginBottom:14,marginTop:6}}>
+              <div style={{width:6,height:6,borderRadius:"50%",background:isExit?D.exit:"#6BBF8E"}}/>
+              <span style={{fontFamily:D.sans,fontSize:12,color:D.cream3}}>{result.toneLabel}</span>
+            </div>
+            <Dots/>
+            <div style={{background:isExit?D.exitLight:`linear-gradient(135deg,${D.surface} 0%,${D.surf2} 100%)`,border:`1px solid ${isExit?D.exit+"40":D.accent+"40"}`,borderRadius:18,padding:"20px 18px",marginBottom:12,boxShadow:`0 4px 24px ${isExit?D.exit:D.accent}15`}}>
+              <p style={{fontFamily:D.sans,fontSize:10,color:isExit?D.exit:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:10}}>
+                {isExit?"Your exit line":"Filtered version"}
+              </p>
+              <p style={{fontFamily:D.sans,fontSize:15,color:D.cream,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{result.refined}</p>
+            </div>
+            {result.explanation&&<p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,lineHeight:1.6,marginBottom:16,fontStyle:"italic"}}>✦ {result.explanation}</p>}
+            <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:14,padding:"14px 18px",marginBottom:18}}>
+              <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Your original</p>
+              <p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,lineHeight:1.65,fontStyle:"italic"}}>{raw}</p>
+            </div>
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <PBtn onClick={copy} style={{flex:1,padding:"13px 16px",background:isExit?D.exit:D.accent,color:"#fff",border:"1px solid rgba(255,255,255,0.15)"}}>
+                {copied?"Copied ✓":"Copy"}
+              </PBtn>
+              <GBtn onClick={nextVariation} style={{flex:1,padding:"13px 16px"}}>
+                Next {isExit?"escape":"version"} →
+              </GBtn>
+            </div>
+            <div style={{textAlign:"center"}}>
+              <button onClick={()=>go("main")} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>
+                Start over
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Shell(){
+  const {screen}=useApp();
+  const map={gate:<AgeGate/>,tos:<ToSScreen/>,splash:<Splash/>,quiz:<Quiz/>,reveal:<Reveal/>,main:<Main/>,output:<Output/>};
+  return(
+    <div style={{width:"100%",height:"100%",background:D.bg,position:"relative",overflow:"hidden"}}>
+      <style>{`
+        @keyframes pulse{0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.07)}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        *{box-sizing:border-box;}
+        textarea,input{scrollbar-width:none;}
+        textarea::placeholder{color:#6B6259;font-style:italic;}
+        input::placeholder{color:#6B6259;}
+        ::-webkit-scrollbar{display:none;}
+        button{-webkit-tap-highlight-color:transparent;}
+      `}</style>
+      {Object.entries(map).map(([k,el])=>(
+        <div key={k} style={{position:"absolute",inset:0,opacity:screen===k?1:0,transform:screen===k?"translateY(0)":"translateY(14px)",transition:"opacity .35s ease,transform .35s ease",pointerEvents:screen===k?"all":"none",overflow:"hidden"}}>
+          {el}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function App(){
+  const isMobile=window.innerWidth<=500;
+  if(isMobile){
+    return <div style={{height:"100vh",width:"100vw",background:D.bg}}><AppProvider><Shell/></AppProvider></div>;
+  }
+  return(
+    <div style={{minHeight:"100vh",background:"#1A1612",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+      <div style={{width:400,height:"min(820px,92vh)",background:D.bg,borderRadius:36,overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.06)",position:"relative"}}>
+        <AppProvider><Shell/></AppProvider>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
 </body>
 </html>
