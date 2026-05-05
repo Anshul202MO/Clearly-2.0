@@ -473,41 +473,44 @@ function Paywall(){
     setSubmitting(true);
     try{await submitToGoogle(name,email);}catch(_){}
     setSubmitted(true);setSubmitting(false);
+    try{localStorage.setItem("clr_registered","1");}catch(_){}
   };
   return(
-    <div style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+    <div style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
       <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:24,padding:32,maxWidth:340,width:"100%",textAlign:"center",animation:"fadeIn .3s ease"}}>
         <div style={{fontSize:36,marginBottom:16}}>✦</div>
-        <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,marginBottom:10,lineHeight:1.3}}>
-          You've used your<br/><em style={{fontStyle:"italic",color:D.accent}}>5 free filters.</em>
-        </h2>
         {!submitted?(
           <>
+            <h2 style={{fontFamily:D.serif,fontSize:26,fontWeight:300,color:D.cream,marginBottom:10,lineHeight:1.3}}>
+              You've used your<br/><em style={{fontStyle:"italic",color:D.accent}}>4 free filters.</em>
+            </h2>
             <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.65,marginBottom:20}}>
-              Come back tomorrow for 5 more — or drop your details to get early access when premium launches.
+              Clearly is going paid. Join the waitlist and we'll send you an invite — plus early access pricing.
             </p>
             {!showForm?(
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <PBtn onClick={()=>setShowForm(true)} style={{width:"100%"}}>Notify me when premium launches →</PBtn>
-                <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>See you tomorrow</button>
-              </div>
+              <PBtn onClick={()=>setShowForm(true)} style={{width:"100%"}}>Join the waitlist →</PBtn>
             ):(
               <div style={{animation:"fadeIn .3s ease",textAlign:"left"}}>
                 <NameEmailForm onSubmit={handleSubmit} submitting={submitting} inputBg={D.bg}/>
-                <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:12,color:D.cream3,cursor:"pointer",marginTop:10,display:"block",width:"100%",textAlign:"center"}}>No thanks</button>
               </div>
             )}
           </>
         ):(
           <div style={{animation:"fadeIn .3s ease"}}>
-            <p style={{fontFamily:D.sans,fontSize:15,color:D.cream,marginBottom:6}}>✓ You are on the list!</p>
-            <p style={{fontFamily:D.sans,fontSize:13,color:D.cream3,marginBottom:20,lineHeight:1.6}}>We will reach out when premium is ready.</p>
-            <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>Close</button>
+            <h2 style={{fontFamily:D.serif,fontSize:28,fontWeight:300,color:D.cream,marginBottom:12,lineHeight:1.3}}>
+              See you on the<br/><em style={{fontStyle:"italic",color:D.accent}}>other side.</em>
+            </h2>
+            <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.7,marginBottom:20}}>
+              We'll be in touch when Clearly launches.
+            </p>
+            <button onClick={()=>setShowPaywall(false)} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream3,cursor:"pointer"}}>
+              Close
+            </button>
           </div>
         )}
         <div style={{marginTop:24,padding:"12px 14px",background:D.bg,borderRadius:10,border:`1px solid ${D.border}`}}>
           <p style={{fontFamily:D.sans,fontSize:11,color:D.cream3,lineHeight:1.6}}>
-            ⚠️ Clearly is not therapy or professional advice. Use at your own risk. Contact: {CONTACT_EMAIL}
+            ⚠️ Clearly is not therapy or professional advice. Use at your own risk.
           </p>
         </div>
       </div>
