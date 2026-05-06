@@ -36,12 +36,12 @@ const GROQ_KEY = "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";
 const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
 const ENTRY_NAME  = "entry.1321807565";
 const ENTRY_EMAIL = "entry.13266213";
-const CONTACT_EMAIL = "clearlysupport@gmail.com";
+const CONTACT_EMAIL = "lysupport@gmail.com";
 const FREE_LIMIT = 4;
 
-function getUsage(){try{const r=localStorage.getItem("clr_usage");if(!r)return{count:0,date:new Date().toDateString()};return JSON.parse(r);}catch(_){return{count:0,date:new Date().toDateString()};}}
-function incrementUsage(){const today=new Date().toDateString();const u=getUsage();const count=u.date===today?u.count+1:1;try{localStorage.setItem("clr_usage",JSON.stringify({count,date:today}));}catch(_){}return count;}
-function todayUsage(){const u=getUsage();if(u.date!==new Date().toDateString())return 0;return u.count;}
+function getUsage(){try{const r=localStorage.getItem("clr_usage");if(!r)return 0;return parseInt(r)||0;}catch(_){return 0;}}
+function incrementUsage(){const count=getUsage()+1;try{localStorage.setItem("clr_usage",String(count));}catch(_){}return count;}
+function todayUsage(){return getUsage();}
 function getAgeGateAccepted(){try{return localStorage.getItem("clr_age")==="1";}catch(_){return false;}}
 function getToSAccepted(){try{return localStorage.getItem("clr_tos")==="1";}catch(_){return false;}}
 
@@ -241,7 +241,7 @@ function AppProvider({children}){
         body:JSON.stringify({
           model:"llama-3.3-70b-versatile",
           messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
-          max_tokens:4000,temperature:0.9,
+          max_tokens:5000,temperature:0.9,
         }),
       });
       const data=await res.json();
@@ -530,7 +530,7 @@ function Splash(){
           <span style={{fontSize:28,color:"#fff"}}>✦</span>
         </div>
         <div style={{fontFamily:D.serif,fontSize:52,fontWeight:300,color:D.cream,lineHeight:1,letterSpacing:"-0.02em",marginBottom:14}}>
-          Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em>
+         Clear<em style={{fontStyle:"italic",color:D.accent,marginLeft:"-0.05em"}}>ly</em>
         </div>
         <div style={{display:"inline-block",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:20,padding:"4px 14px",marginBottom:16}}>
           <span style={{fontFamily:D.sans,fontSize:11,color:D.accent,fontWeight:500,letterSpacing:"0.06em"}}>FREE BETA</span>
@@ -763,8 +763,8 @@ function Main(){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div>
               <span style={{fontFamily:D.sans,fontSize:11,color:D.cream3}}>{raw.length}/{MAX}</span>
-              <span style={{fontFamily:D.sans,fontSize:11,color:remaining<=1?D.accent:D.cream3,marginLeft:10}}>
-                {remaining} filter{remaining!==1?"s":""} left today
+              <span style={{fontFamily:D.sans,fontSize:11,color:remaining<=1?"#E08080":D.cream3,marginLeft:10}}>
+                {remaining===0?"No filters left":`${remaining} filter${remaining!==1?"s":""} left${remaining===1?" — last one ⚠️":""}`}
               </span>
             </div>
             <PBtn onClick={handleFilter} disabled={!raw.trim()||remaining===0} style={{padding:"13px 24px",fontSize:14}}>
@@ -798,13 +798,15 @@ function Output(){
 
   useEffect(()=>{
     if(!result?.variations)return;
+    setRatings({0:0,1:0,2:0});
+    setFeedback({0:"",1:"",2:""});
     setVisible([false,false,false]);
     const t0=setTimeout(()=>setVisible(v=>[true,v[1],v[2]]),100);
     const t1=setTimeout(()=>setVisible(v=>[v[0],true,v[2]]),300);
     const t2=setTimeout(()=>setVisible(v=>[v[0],v[1],true]),500);
     return()=>{clearTimeout(t0);clearTimeout(t1);clearTimeout(t2);};
   },[result]);
-
+  
   const copy=async(text,index)=>{
     try{await navigator.clipboard.writeText(text);setCopiedIndex(index);setTimeout(()=>setCopiedIndex(null),2200);}catch(_){}
   };
