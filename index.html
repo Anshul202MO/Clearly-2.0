@@ -10,12 +10,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{height:100%;width:100%;background:#1A1612;}
+html,body{height:100%;width:100%;background:#0D0E11;}
 #root{height:100%;width:100%;}
-textarea::placeholder{color:#6B6259;font-style:italic;}
-input::placeholder{color:#6B6259;}
+textarea::placeholder{color:#5C5955;font-style:italic;}
+input::placeholder{color:#5C5955;}
 ::-webkit-scrollbar{display:none;}
-@keyframes pulse{0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
@@ -30,8 +29,13 @@ const {useState,useContext,createContext,useEffect,useCallback,useRef}=React;
 // Get free at: console.groq.com
 // Starts with: gsk_
 // =============================================
-const GROQ_KEY = "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";
+const GROQ_KEY = "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";
 // =============================================
+
+// To swap model back to 70b: change to "llama-3.3-70b-versatile"
+const MODEL = "llama-3.1-8b-instant";
+
+const ADMIN_HASH = "950f50aa32ba9ef49bd1e759a8f54ce2e88bbca7c05987e10933d393967954b6";
 
 const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
 const ENTRY_NAME  = "entry.1321807565";
@@ -44,6 +48,14 @@ function incrementUsage(){const count=getUsage()+1;try{localStorage.setItem("clr
 function todayUsage(){return getUsage();}
 function getAgeGateAccepted(){try{return localStorage.getItem("clr_age")==="1";}catch(_){return false;}}
 function getToSAccepted(){try{return localStorage.getItem("clr_tos")==="1";}catch(_){return false;}}
+function isAdminMode(){try{return localStorage.getItem("clr_admin")==="1";}catch(_){return false;}}
+
+async function hashPassword(password){
+  const msgBuffer=new TextEncoder().encode(password);
+  const hashBuffer=await crypto.subtle.digest("SHA-256",msgBuffer);
+  const hashArray=Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b=>b.toString(16).padStart(2,"0")).join("");
+}
 
 async function submitToGoogle(name,email){
   const formData=new FormData();
@@ -60,43 +72,27 @@ const CONTEXTS=[
 ];
 
 const ARCHETYPES={
-  "over-explainer":{key:"over-explainer",label:"The Over-Sharer",emoji:"📖",color:"#E8A87C",
+  "over-explainer":{key:"over-explainer",label:"The Over-Sharer",emoji:"📖",color:"#9B8EC4",
     tagline:"You lead with empathy, context, and about 40% too many words.",
     traits:["Empathetic","Thorough","Verbose"],
     tip:"Write it all out, then delete the first two sentences.",
-    exitStyle:"Give a detailed story-based excuse with names and context. Make it believable because you over-explain naturally. Example: Oh my god, I just got a text — my friend Maya is locked out of her flat and I am literally the only one with a spare key. I am so sorry, I have to run!"},
-  terse:{key:"terse",label:"The Clammer",emoji:"🔒",color:"#7C9EBE",
+    exitStyle:"Give a detailed story-based excuse with names and context. Example: Oh my god, I just got a text — my friend Maya is locked out of her flat and I am literally the only one with a spare key. I am so sorry, I have to run!"},
+  terse:{key:"terse",label:"The Clammer",emoji:"🔒",color:"#7B82B8",
     tagline:"Under pressure you go quiet. What comes out is curt and often misread.",
     traits:["Efficient","Private","Guarded"],
     tip:"Add one warm sentence before your main point.",
-    exitStyle:"Give the shortest possible exit. One sentence, no explanation. Example: I have to go. Or: Sorry, something came up. Nothing more."},
-  qualifier:{key:"qualifier",label:"The Softener",emoji:"🌿",color:"#8CBE8C",
+    exitStyle:"Give the shortest possible exit. One sentence, no explanation. Example: I have to go. Or: Sorry, something came up."},
+  qualifier:{key:"qualifier",label:"The Softener",emoji:"🌿",color:"#8B82B8",
     tagline:"You wrap every thought in cushions. The point is in there — somewhere.",
     traits:["Considerate","Diplomatic","Hedging"],
     tip:"Lead with the ask. Soften after.",
-    exitStyle:"Give a warm apologetic excuse loaded with softeners. Example: I am so sorry, I really hate to do this, but I just remembered I promised to help someone and I would feel terrible letting them down — would you mind if I slipped away?"},
-  blunt:{key:"blunt",label:"The Steamroller",emoji:"⚡",color:"#BE9B7C",
+    exitStyle:"Give a warm apologetic excuse loaded with softeners. Example: I am so sorry, I really hate to do this, but I just remembered I promised to help someone — would you mind if I slipped away?"},
+  blunt:{key:"blunt",label:"The Steamroller",emoji:"⚡",color:"#6E65A0",
     tagline:"You say exactly what you mean — sometimes before checking the moment.",
     traits:["Direct","Decisive","Unfiltered"],
     tip:"Add one line of context before you land the point.",
     exitStyle:"Give a direct unapologetic exit. No story needed. Example: I need to head off. Or: I am going to go now. Delivered with confidence."},
 };
-
-const EXIT_CATEGORIES=`
-EXIT SITUATIONS — if the user message matches any of these, return exit excuses not rewrites. Set isExit to true.
-
-CATEGORY 1 PHYSICAL DISCOMFORT: bad body odour, bad breath, hygiene issues, standing too close, invading personal space, visibly sick and coughing on them, touched without consent, trapped in a hug too long.
-
-CATEGORY 2 SOCIALLY IMPOSSIBLE: someone extremely drunk or high wants a deep talk, someone mid-meltdown crying in public, someone on verge of a fight looking for argument, stranger venting life story.
-
-CATEGORY 3 WORKPLACE LANDMINES: boss is wrong but wrong moment, colleague taking credit in front of others, someone asking their salary or personal finances, HR asking something needing a lawyer, client being inappropriate.
-
-CATEGORY 4 FAMILY AND RELATIONSHIP TRAPS: relative asking when getting married or having kids, unsolicited parenting or life advice, ex trying to restart closed conversation, family member starting political or religious argument at dinner, asked opinion on terrible partner.
-
-CATEGORY 5 DATING AND SOCIAL AWKWARDNESS: date going badly and need to leave, someone flirting and not interested, friend of friend wont stop talking, someone clearly lying but cannot call it out, being asked to take sides in someone else argument.
-
-CATEGORY 6 DIGITAL TEXT TRAPS: someone sends long rant expecting full response, group chat blowing up and being pulled in, passive aggressive message received, old contact resurfaces wanting something.
-`;
 
 const QUIZ=[
   {field:"communicationStyle",q:"When you're stressed, your messages tend to be…",opts:[
@@ -193,45 +189,29 @@ function AppProvider({children}){
   const generate=useCallback(async(currentRaw,currentCtx,currentPersonality)=>{
     if(!currentRaw.trim())return;
     const used=todayUsage();
-    if(used>=FREE_LIMIT){setShowPaywall(true);return;}
+    if(used>=FREE_LIMIT&&!isAdminMode()){setShowPaywall(true);return;}
     setResult(null);setGenError(null);setLoading(true);setScreen("output");
     try{
       if(!GROQ_KEY||GROQ_KEY===""){
-        setGenError("No API key found. Add your GROQ_KEY to index.html on GitHub.");
+        setGenError("Clearly is taking a breather — try again in a moment.");
         return;
       }
       const arch=ARCHETYPES[currentPersonality.archetypeKey]||ARCHETYPES.qualifier;
       const systemPrompt=[
-        "You are Clearly — a witty warm communication filter for overthinkers.",
-        "You help people say what they mean clearly, confidently, and sometimes with humour.",
+        "You are Clearly — a warm, witty communication filter for overthinkers. Help people say what they mean clearly and confidently.",
         "",
         `USER PERSONALITY: ${currentPersonality.aiPromptSummary||"General overthinker."}`,
-        `USER ARCHETYPE: ${arch.label}`,
+        `ARCHETYPE: ${arch.label} — ${arch.exitStyle}`,
         "",
-        `CONTEXT: ${currentCtx.label}`,
-        `TONE: ${currentCtx.tone}`,
+        `CONTEXT: ${currentCtx.label} — ${currentCtx.tone}`,
         "",
-        "LANGUAGE DETECTION RULE — VERY IMPORTANT:",
-        "Detect the language of the user input carefully.",
-        "If the user writes in English only — respond in English only.",
-        "If the user writes in Hinglish (Hindi and English mixed, or Hindi in Roman script like yaar, kya, matlab, bhai, suno, lagta hai, nahi, haan, theek hai, arre, woh, karna) — respond in Hinglish. Match their vibe. Keep it natural like young urban Indians actually text.",
-        "If the user writes in Hindi Devanagari — respond in Hindi.",
-        "Never switch languages unless the user switches first.",
-        "For Hinglish exits, make them sound natural like: Yaar sorry, mujhe abhi jaana padega.",
+        "LANGUAGE: Detect input language carefully. English input → English output. Hinglish input (yaar, bhai, kya, matlab, nahi, haan, arre, woh) → Hinglish output matching young urban Indian texting style. Hindi Devanagari → Hindi. Never switch unless user switches.",
         "",
-        EXIT_CATEGORIES,
+        "EXIT DETECTION: If message involves physical discomfort, socially impossible situations, workplace landmines, family traps, bad dates, unwanted flirting, digital text traps — set isExit true and give 3 exit excuses matching user personality. Max 2 sentences each.",
         "",
-        "IF EXIT SCENARIO: set isExit true. Give 5 exit excuses matched to user personality.",
-        `Exit style for this user: ${arch.exitStyle}`,
-        "Each excuse must sound like something this specific person would say. Vary meaningfully. MAX 2 sentences each.",
+        "IF NORMAL REWRITE: set isExit false. Give 3 rewrites. Fix their weakness: over-explaining → cut ruthlessly, terse → add warmth, hedging → be direct, blunt → soften. Each variation meaningfully different in tone and length. Keep SHORT and punchy. Never robotic or LinkedIn-ish.",
         "",
-        "IF NORMAL REWRITE: set isExit false. Give 5 rewrites.",
-        "Be warm, human, occasionally witty. Never robotic or LinkedIn-ish.",
-        "Read intention not just words. Soften negatives. Sharpen positives.",
-        "Fix their weakness: over-explaining means cut ruthlessly, terse means add warmth, hedging means be direct, blunt means soften.",
-        "Each of 5 variations must feel meaningfully different in tone, length, angle. Keep SHORT and punchy.",
-        "",
-        "RESPOND WITH ONLY RAW JSON. No markdown. No explanation. No code fences:",
+        "RESPOND WITH ONLY RAW JSON. No markdown. No code fences:",
         '{"isExit":false,"variations":[{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"}]}',
       ].join("\n");
 
@@ -239,7 +219,7 @@ function AppProvider({children}){
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
         body:JSON.stringify({
-          model:"llama-3.3-70b-versatile",
+          model:MODEL,
           messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
           max_tokens:5000,temperature:0.9,
         }),
@@ -247,29 +227,29 @@ function AppProvider({children}){
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||"Groq API error");
       const text=data.choices?.[0]?.message?.content||"";
-      if(!text)throw new Error("Empty response from Groq");
+      if(!text)throw new Error("Empty response");
       let clean=text.replace(/```json|```/g,"").trim();
       let parsed;
       try{parsed=JSON.parse(clean);}
       catch(e){
-        const matches=[...clean.matchAll(/\{"refined"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"toneLabel"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g)];
+        const matches=[...clean.matchAll(/\{"refined"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"explanation"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g)];
         if(matches.length>0){
-          parsed={isExit:clean.includes('"isExit":true'),variations:matches.map(m=>({refined:m[1],toneLabel:m[2],explanation:m[3]}))};
-        }else{throw new Error("Response was cut off. Please try again.");}
+          parsed={isExit:clean.includes('"isExit":true'),variations:matches.map(m=>({refined:m[1],explanation:m[2]}))};
+        }else{throw new Error("Clearly is taking a breather — try again in a moment.");}
       }
       const variations=parsed.variations||[parsed];
       const isExit=parsed.isExit||false;
-      const newCount=incrementUsage();
+      const newCount=isAdminMode()?getUsage():incrementUsage();
       setUsageCount(newCount);
       setResult({variations,currentIndex:0,isExit,...variations[0]});
       setHistory(h=>{
-        const entry={id:Date.now(),ctx:currentCtx,raw:currentRaw,refined:variations[0].refined,toneLabel:variations[0].toneLabel,isExit,ts:new Date().toISOString()};
+        const entry={id:Date.now(),ctx:currentCtx,raw:currentRaw,refined:variations[0].refined,isExit,ts:new Date().toISOString()};
         const u=[entry,...h].slice(0,30);
         try{localStorage.setItem("clr_h",JSON.stringify(u));}catch(_){}
         return u;
       });
     }catch(e){
-      setGenError("Something went wrong: "+(e.message||"check your Groq key and try again."));
+      setGenError("Clearly is taking a breather — try again in a moment.");
     }finally{setLoading(false);}
   },[]);
 
@@ -287,11 +267,11 @@ function AppProvider({children}){
 }
 
 const D={
- bg:"#0D0E11",bg2:"#111214",surface:"#1C1E22",surf2:"#222529",
-accent:"#8B82B8",accentD:"#6E65A0",
-exit:"#7B6FB0",exitLight:"#1A1828",
-cream:"#F0EDE8",cream2:"#A8A49E",cream3:"#5C5955",
-border:"rgba(255,255,255,0.07)",border2:"rgba(255,255,255,0.04)",
+  bg:"#0D0E11",bg2:"#111214",surface:"#1C1E22",surf2:"#222529",
+  accent:"#8B82B8",accentD:"#6E65A0",
+  exit:"#7B6FB0",exitLight:"#1A1828",
+  cream:"#F0EDE8",cream2:"#A8A49E",cream3:"#5C5955",
+  border:"rgba(255,255,255,0.07)",border2:"rgba(255,255,255,0.04)",
   serif:"'Playfair Display',Georgia,serif",sans:"'Inter',sans-serif",
 };
 
@@ -335,6 +315,53 @@ function NameEmailForm({onSubmit,submitting,inputBg=D.surface}){
   );
 }
 
+function AdminLogin({onClose}){
+  const [password,setPassword]=useState("");
+  const [error,setError]=useState("");
+  const [attempts,setAttempts]=useState(0);
+  const [v,setV]=useState(false);
+  useEffect(()=>{setTimeout(()=>setV(true),50);},[]);
+  const handleSubmit=async()=>{
+    if(!password.trim())return;
+    const hash=await hashPassword(password);
+    if(hash===ADMIN_HASH){
+      try{localStorage.setItem("clr_admin","1");}catch(_){}
+      onClose(true);
+    }else{
+      const newAttempts=attempts+1;
+      setAttempts(newAttempts);
+      if(newAttempts>=3){
+        setError("Too many attempts.");
+        setTimeout(()=>onClose(false),1500);
+      }else{
+        setError(`Incorrect. ${3-newAttempts} attempt${3-newAttempts!==1?"s":""} left.`);
+        setPassword("");
+      }
+    }
+  };
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:20,padding:28,maxWidth:300,width:"100%",textAlign:"center",opacity:v?1:0,transform:v?"translateY(0)":"translateY(16px)",transition:"all .3s ease"}}>
+        <p style={{fontFamily:D.sans,fontSize:10,color:D.cream3,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:16}}>Admin access</p>
+        <input
+          type="password"
+          value={password}
+          onChange={e=>setPassword(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+          placeholder="Password"
+          autoFocus
+          style={{width:"100%",background:D.bg,border:`1px solid ${D.border}`,borderRadius:10,padding:"12px 16px",fontFamily:D.sans,fontSize:14,color:D.cream,outline:"none",marginBottom:10}}
+        />
+        {error&&<p style={{fontFamily:D.sans,fontSize:12,color:"#E08080",marginBottom:10}}>{error}</p>}
+        <div style={{display:"flex",gap:8}}>
+          <PBtn onClick={handleSubmit} style={{flex:1,padding:"12px"}}>Enter</PBtn>
+          <GBtn onClick={()=>onClose(false)} style={{flex:1,padding:"12px"}}>Cancel</GBtn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AgeGate(){
   const {go}=useApp();
   const [v,setV]=useState(false);
@@ -343,7 +370,6 @@ function AgeGate(){
   const decline=()=>{alert("Sorry, Clearly is only available to users aged 13 and above.");};
   return(
     <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",padding:"40px 28px",textAlign:"center"}}>
-      <Ambient/>
       <div style={{position:"relative",zIndex:1,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all .6s ease",maxWidth:320,width:"100%"}}>
         <div style={{width:56,height:56,borderRadius:16,background:`linear-gradient(135deg,${D.accent},${D.accentD})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 8px 32px ${D.accent}40`}}>
           <span style={{fontSize:26,color:"#fff"}}>✦</span>
@@ -384,13 +410,12 @@ function ToSScreen(){
     {title:"Age Requirement",body:"You must be 13 years of age or older to use Clearly. By using this app you confirm you meet this requirement. If you are under 13, please stop using the app immediately."},
     {title:"Limitation of Liability",body:"To the fullest extent permitted by law, Clearly and its developer shall not be liable for any direct, indirect, incidental, special, or consequential damages resulting from your use of, or inability to use, this app.\n\nThis includes but is not limited to: relationship damage, professional consequences, emotional distress, or any other outcome arising from following a suggestion made by this app.\n\nYou use Clearly entirely at your own risk."},
     {title:"Privacy Policy",body:`We take your privacy seriously. Here is exactly what happens with your data:\n\n• Your messages are sent to Groq (groq.com) for AI processing. Groq's privacy policy applies.\n\n• We do not store your messages on any server. Once processed, they are gone.\n\n• Your personality profile is stored only in your browser's local storage on your own device. We cannot access it.\n\n• If you submit your name and email for beta updates, it is stored in a Google Sheet accessible only to the developer at ${CONTACT_EMAIL}. We will never sell, share, or spam your information.\n\n• We do not use tracking cookies. We do not run ads. We do not sell data.\n\nFor any questions: ${CONTACT_EMAIL}`},
-    {title:"Beta Product",body:"Clearly is currently in free beta. The product is still being developed, may have bugs, and features may change.\n\nDuring beta, Clearly is completely free within daily limits. Any future pricing will be communicated clearly before any charges apply."},
+    {title:"Beta Product",body:"Clearly is currently in free beta. The product is still being developed, may have bugs, and features may change.\n\nDuring beta, Clearly is completely free within usage limits. Any future pricing will be communicated clearly before any charges apply."},
     {title:"Intellectual Property",body:"All content, design, and code in Clearly belongs to its developer. You may not copy, reproduce, or redistribute any part of Clearly without written permission."},
     {title:"Changes to These Terms",body:`We may update these terms at any time. Continued use of the app after changes means you accept the new terms.\n\nLast updated: ${new Date().toLocaleDateString("en-IN",{year:"numeric",month:"long",day:"numeric"})}`},
   ];
   return(
     <div style={{position:"relative",display:"flex",flexDirection:"column",height:"100%"}}>
-      <Ambient/>
       <div style={{position:"relative",zIndex:1,padding:"28px 24px 16px",flexShrink:0}}>
         <div style={{opacity:v?1:0,transition:"opacity .5s ease"}}>
           <p style={{fontFamily:D.sans,fontSize:11,color:D.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>Before you start</p>
@@ -524,13 +549,12 @@ function Splash(){
   useEffect(()=>{setTimeout(()=>setV(true),100);},[]);
   return(
     <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",padding:"40px 32px",textAlign:"center"}}>
-      <Ambient/>
       <div style={{position:"relative",zIndex:1,opacity:v?1:0,transform:v?"translateY(0)":"translateY(24px)",transition:"all .7s ease"}}>
         <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${D.accent},${D.accentD})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 8px 32px ${D.accent}40`}}>
           <span style={{fontSize:28,color:"#fff"}}>✦</span>
         </div>
         <div style={{fontFamily:D.serif,fontSize:52,fontWeight:300,color:D.cream,lineHeight:1,letterSpacing:"-0.02em",marginBottom:14}}>
-         Clear<em style={{fontStyle:"italic",color:D.accent,marginLeft:"-0.05em"}}>ly</em>
+          Clear<em style={{fontStyle:"italic",color:D.accent,marginLeft:"-0.05em"}}>ly</em>
         </div>
         <div style={{display:"inline-block",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:20,padding:"4px 14px",marginBottom:16}}>
           <span style={{fontFamily:D.sans,fontSize:11,color:D.accent,fontWeight:500,letterSpacing:"0.06em"}}>FREE BETA</span>
@@ -544,7 +568,7 @@ function Splash(){
         <PBtn onClick={()=>go("quiz")} style={{width:"100%",maxWidth:260,padding:"18px 32px",fontSize:16}}>
           Get started — it's free
         </PBtn>
-        <p style={{fontFamily:D.sans,fontSize:12,color:D.cream3,marginTop:16}}>5 questions · 5 free filters/day · no sign up</p>
+        <p style={{fontFamily:D.sans,fontSize:12,color:D.cream3,marginTop:16}}>5 questions · 4 free filters · no sign up</p>
       </div>
     </div>
   );
@@ -573,7 +597,6 @@ function Quiz(){
   const slide={opacity:animIn?1:0,transform:animIn?"translateX(0)":`translateX(${dir*20}px)`,transition:"opacity .24s ease,transform .24s ease"};
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
-      <Ambient/>
       <div style={{position:"relative",zIndex:1,padding:"28px 28px 0",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
           <button onClick={back} style={{background:"none",border:"none",color:step===0?"transparent":D.cream2,cursor:step===0?"default":"pointer",fontFamily:D.sans,fontSize:13,padding:0,transition:"color .2s"}}>← back</button>
@@ -605,6 +628,7 @@ function Quiz(){
     </div>
   );
 }
+
 function WelcomeGate(){
   const {go}=useApp();
   const [showForm,setShowForm]=useState(false);
@@ -620,7 +644,6 @@ function WelcomeGate(){
   };
   return(
     <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",padding:"40px 28px",textAlign:"center"}}>
-      <Ambient/>
       <div style={{position:"relative",zIndex:1,opacity:v?1:0,transform:v?"translateY(0)":"translateY(20px)",transition:"all .6s ease",maxWidth:320,width:"100%"}}>
         {!submitted?(
           <>
@@ -657,7 +680,8 @@ function WelcomeGate(){
       </div>
     </div>
   );
-}  
+}
+
 function Reveal(){
   const {go,personality}=useApp();
   const arch=ARCHETYPES[personality.archetypeKey]||ARCHETYPES.qualifier;
@@ -671,7 +695,6 @@ function Reveal(){
   const f=(show,delay="0s")=>({opacity:show?1:0,transform:show?"translateY(0)":"translateY(16px)",transition:`all .6s ease ${delay}`});
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative",alignItems:"center",justifyContent:"center",padding:"40px 28px",textAlign:"center",overflowY:"auto"}}>
-      <Ambient color={arch.color}/>
       <div style={{position:"relative",zIndex:1,width:"100%"}}>
         <div style={{...f(phase>=1),marginBottom:24}}>
           <div style={{width:80,height:80,borderRadius:"50%",background:`${arch.color}22`,border:`1.5px solid ${arch.color}60`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",boxShadow:`0 0 48px ${arch.color}30`}}>
@@ -702,17 +725,33 @@ function Main(){
   const {personality,ctx,setCtx,raw,setRaw,generate,reset,usageCount,showPaywall,setShowPaywall}=useApp();
   const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
   const [showP,setShowP]=useState(false);
+  const [showAdmin,setShowAdmin]=useState(false);
+  const [isAdmin,setIsAdmin]=useState(()=>isAdminMode());
+  const [adminKeySeq,setAdminKeySeq]=useState("");
   const MAX=800;
   const remaining=Math.max(0,FREE_LIMIT-usageCount);
+
+  useEffect(()=>{
+    const handleKey=(e)=>{
+      if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;
+      const seq=adminKeySeq+e.key;
+      if(seq.endsWith("admin")){setShowAdmin(true);setAdminKeySeq("");}
+      else{setAdminKeySeq(seq.slice(-5));}
+    };
+    window.addEventListener("keydown",handleKey);
+    return()=>window.removeEventListener("keydown",handleKey);
+  },[adminKeySeq]);
+
   const handleFilter=()=>generate(raw,ctx,personality);
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
       {showPaywall&&<Paywall/>}
-      <Ambient/>
+      {showAdmin&&<AdminLogin onClose={(success)=>{setShowAdmin(false);if(success)setIsAdmin(true);}}/>}
       <div style={{position:"relative",zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 24px 0",flexShrink:0}}>
         <div style={{fontFamily:D.serif,fontSize:22,fontWeight:300,color:D.cream,letterSpacing:"-0.01em",display:"flex",alignItems:"center",gap:8}}>
-          Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em>
+          Clear<em style={{fontStyle:"italic",color:D.accent,marginLeft:"-0.05em"}}>ly</em>
           <span style={{fontFamily:D.sans,fontSize:9,color:D.accent,letterSpacing:"0.08em",textTransform:"uppercase",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:8,padding:"2px 6px"}}>BETA</span>
+          {isAdmin&&<span style={{width:6,height:6,borderRadius:"50%",background:"#E8C97A",display:"inline-block",marginLeft:2,verticalAlign:"middle"}}/>}
         </div>
         {arch&&(
           <button onClick={()=>setShowP(p=>!p)} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:20,padding:"6px 14px 6px 10px",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
@@ -763,11 +802,14 @@ function Main(){
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div>
               <span style={{fontFamily:D.sans,fontSize:11,color:D.cream3}}>{raw.length}/{MAX}</span>
-              <span style={{fontFamily:D.sans,fontSize:11,color:remaining<=1?"#E08080":D.cream3,marginLeft:10}}>
-                {remaining===0?"No filters left":`${remaining} filter${remaining!==1?"s":""} left${remaining===1?" — last one ⚠️":""}`}
-              </span>
+              {!isAdmin&&(
+                <span style={{fontFamily:D.sans,fontSize:11,color:remaining<=1?"#E08080":D.cream3,marginLeft:10}}>
+                  {remaining===0?"No filters left":`${remaining} filter${remaining!==1?"s":""} left${remaining===1?" — last one ⚠️":""}`}
+                </span>
+              )}
+              {isAdmin&&<span style={{fontFamily:D.sans,fontSize:11,color:"#E8C97A",marginLeft:10}}>Admin mode</span>}
             </div>
-            <PBtn onClick={handleFilter} disabled={!raw.trim()||remaining===0} style={{padding:"13px 24px",fontSize:14}}>
+            <PBtn onClick={handleFilter} disabled={!raw.trim()||(remaining===0&&!isAdmin)} style={{padding:"13px 24px",fontSize:14}}>
               Filter it →
             </PBtn>
           </div>
@@ -806,7 +848,7 @@ function Output(){
     const t2=setTimeout(()=>setVisible(v=>[v[0],v[1],true]),500);
     return()=>{clearTimeout(t0);clearTimeout(t1);clearTimeout(t2);};
   },[result]);
-  
+
   const copy=async(text,index)=>{
     try{await navigator.clipboard.writeText(text);setCopiedIndex(index);setTimeout(()=>setCopiedIndex(null),2200);}catch(_){}
   };
@@ -824,7 +866,6 @@ function Output(){
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
       {showPaywall&&<Paywall/>}
-      <Ambient color={isExit?D.exit:arch?.color||D.accent}/>
       <div style={{position:"relative",zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 24px 0",flexShrink:0}}>
         <button onClick={()=>go("main")} style={{background:"none",border:"none",fontFamily:D.sans,fontSize:13,color:D.cream2,cursor:"pointer",padding:0}}>← Edit</button>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -840,8 +881,8 @@ function Output(){
           </div>
         )}
         {!loading&&genError&&(
-          <div style={{padding:24,background:D.surface,borderRadius:16,border:`1px solid ${D.border}`,marginTop:20}}>
-            <p style={{fontFamily:D.sans,fontSize:14,color:"#E08080",lineHeight:1.6,marginBottom:16}}>{genError}</p>
+          <div style={{padding:24,background:D.surface,borderRadius:16,border:`1px solid ${D.border}`,marginTop:20,textAlign:"center"}}>
+            <p style={{fontFamily:D.sans,fontSize:14,color:D.cream2,lineHeight:1.6,marginBottom:16}}>{genError}</p>
             <GBtn onClick={()=>generate(raw,ctx,personality)}>Try again</GBtn>
           </div>
         )}
@@ -906,13 +947,12 @@ function Shell(){
   return(
     <div style={{width:"100%",height:"100%",background:D.bg,position:"relative",overflow:"hidden"}}>
       <style>{`
-        @keyframes pulse{0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.07)}}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         *{box-sizing:border-box;}
         textarea,input{scrollbar-width:none;}
-        textarea::placeholder{color:#6B6259;font-style:italic;}
-        input::placeholder{color:#6B6259;}
+        textarea::placeholder{color:#5C5955;font-style:italic;}
+        input::placeholder{color:#5C5955;}
         ::-webkit-scrollbar{display:none;}
         button{-webkit-tap-highlight-color:transparent;}
       `}</style>
@@ -931,7 +971,7 @@ function App(){
     return <div style={{height:"100vh",width:"100vw",background:D.bg}}><AppProvider><Shell/></AppProvider></div>;
   }
   return(
-    <div style={{minHeight:"100vh",background:"#1A1612",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
+    <div style={{minHeight:"100vh",background:"#0D0E11",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px"}}>
       <div style={{width:400,height:"min(820px,92vh)",background:D.bg,borderRadius:36,overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.06)",position:"relative"}}>
         <AppProvider><Shell/></AppProvider>
       </div>
