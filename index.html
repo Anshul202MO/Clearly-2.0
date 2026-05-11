@@ -195,7 +195,7 @@ function AppProvider({children}){
         "",
         "LANGUAGE DETECTION — follow this strictly:",
         "- If input is in English only → respond in English only.",
-        "- If input contains Hinglish markers (yaar, bhai, kya, matlab, nahi, haan, arre, woh, kar, ho, hai, toh, na, aur, bas, kal, abhi, thoda, bohot, bilkul, seedha, chill, sahi, bata, bol, sun, dikh, lag, chal) → respond in natural Hinglish. Match the vibe of young urban Indian texting — casual, warm, a little playful. Mix Hindi and English words naturally the way a 25-year-old in Mumbai or Delhi would text. Do NOT be formal. Do NOT use pure Hindi. Do NOT use English only.",
+        "- If input contains Hinglish markers (yaar, bhai, kya, matlab, nahi, haan, arre, woh, kar, ho, hai, toh, na, aur, bas, suno, lagta hai, theek hai, karna, abhi, thoda, bohot, chill, sahi) → respond in natural Hinglish. Match their vibe exactly like young urban Indians text. Example of correct Hinglish output: Yaar sorry, abhi thoda busy hoon — baad mein baat karte hain. Do NOT translate to English. Do NOT use formal Hindi. Do NOT use English only.",
         "- If input is in Hindi Devanagari script → respond in Hindi Devanagari.",
         "- Never switch language unless the user switches first.",
         "",
@@ -227,7 +227,7 @@ function AppProvider({children}){
           body:JSON.stringify({
             model:MODEL,
             messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
-            max_tokens:5000,temperature:0.9,
+            max_tokens:1500,temperature:0.85,
           }),
         });
       }finally{
