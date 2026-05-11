@@ -235,6 +235,7 @@ function AppProvider({children}){
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||"Groq API error");
       const text=data.choices?.[0]?.message?.content||"";
+console.log("RAW RESPONSE:",text);
       if(!text)throw new Error("Empty response");
       let clean=text.replace(/```json|```/g,"").trim();
       let parsed;
