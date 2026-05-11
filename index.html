@@ -185,10 +185,6 @@ function AppProvider({children}){
     if(used>=FREE_LIMIT&&!isAdminMode()){setShowPaywall(true);return;}
     setResult(null);setGenError(null);setLoading(true);setScreen("output");
     try{
-      if(!GROQ_KEY||GROQ_KEY===""){
-        setGenError("Clearly is taking a breather — try again in a moment.");
-        return;
-      }
       const arch=ARCHETYPES[currentPersonality.archetypeKey]||ARCHETYPES.qualifier;
       const systemPrompt=[
         "You are Clearly — a warm, witty communication filter for overthinkers. Help people say what they mean clearly and confidently.",
