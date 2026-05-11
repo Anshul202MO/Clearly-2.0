@@ -24,8 +24,8 @@ input::placeholder{color:#5C5955;}
 <script type="text/babel">
 const {useState,useContext,createContext,useEffect,useCallback,useRef}=React;
  
-// To swap model back to 70b: change to "llama-3.3-70b-versatile"
-const MODEL = "llama-3.1-8b-instant";
+// To swap model back to 8b: change to "llama-3.1-8b-instant"
+const MODEL = "llama-3.3-70b-versatile";
  
 const ADMIN_HASH = "950f50aa32ba9ef49bd1e759a8f54ce2e88bbca7c05987e10933d393967954b6";
  
@@ -210,7 +210,8 @@ function AppProvider({children}){
         "",
         "RESPOND WITH ONLY RAW JSON. No markdown. No code fences. No preamble:",
         '{"isExit":false,"variations":[{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"}]}',
-"CRITICAL: always use key name 'variations' — never use 'exit-excuses' or any other key name. Even for exit mode, the key must be 'variations'.",
+'{"isExit":false,"variations":[{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"}]}',
+        "CRITICAL: always use the key name 'variations' — never use 'exit-excuses' or any other key. This applies to both exit and non-exit responses.",
       ].join("\n");
  
       // 15 second timeout to prevent stuck loading on Social/Email modes
@@ -246,7 +247,7 @@ function AppProvider({children}){
           parsed={isExit:clean.includes('"isExit":true'),variations:matches.map(m=>({refined:m[1],explanation:m[2]}))};
         }else{throw new Error("Clearly is taking a breather — try again in a moment.");}
       }
-      const variations=parsed.variations||(parsed["exit-excuses"]?.map(t=>({refined:t,explanation:""})))||[parsed];
+      const variations=parsed.variations||parsed["exit-excuses"]?.map(t=>({refined:t,explanation:""}))||[];
       const isExit=parsed.isExit||false;
       const newCount=isAdminMode()?getUsage():incrementUsage();
       setUsageCount(newCount);
