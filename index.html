@@ -29,7 +29,7 @@ const MODEL = "llama-3.3-70b-versatile";
  
 const ADMIN_HASH = "950f50aa32ba9ef49bd1e759a8f54ce2e88bbca7c05987e10933d393967954b6";
  
-const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
+const _FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
 const ENTRY_NAME  = "entry.1321807565";
 const ENTRY_EMAIL = "entry.13266213";
 const CONTACT_EMAIL = "lysupport@gmail.com";
@@ -50,10 +50,8 @@ async function hashPassword(password){
 }
  
 async function submitToGoogle(name,email){
-  const formData=new FormData();
-  formData.append(ENTRY_NAME,name);
-  formData.append(ENTRY_EMAIL,email);
-  await fetch(GOOGLE_FORM_URL,{method:"POST",mode:"no-cors",body:formData});
+  const url=`${GOOGLE_FORM_URL}?${ENTRY_NAME}=${encodeURIComponent(name)}&${ENTRY_EMAIL}=${encodeURIComponent(email)}&submit=Submit`;
+  await fetch(url,{method:"GET",mode:"no-cors"});
 }
  
 const CONTEXTS=[
