@@ -246,7 +246,7 @@ console.log("RAW RESPONSE:",text);
           parsed={isExit:clean.includes('"isExit":true'),variations:matches.map(m=>({refined:m[1],explanation:m[2]}))};
         }else{throw new Error("Clearly is taking a breather — try again in a moment.");}
       }
-      const variations=parsed.variations||[parsed];
+      const variations=parsed.variations||parsed["exit-excuses"]?.map(t=>({refined:t,explanation:""})))||[parsed];
       const isExit=parsed.isExit||false;
       const newCount=isAdminMode()?getUsage():incrementUsage();
       setUsageCount(newCount);
