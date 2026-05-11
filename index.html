@@ -23,47 +23,46 @@ input::placeholder{color:#5C5955;}
 <div id="root"></div>
 <script type="text/babel">
 const {useState,useContext,createContext,useEffect,useCallback,useRef}=React;
-
-
+ 
 // To swap model back to 70b: change to "llama-3.3-70b-versatile"
 const MODEL = "llama-3.1-8b-instant";
-
+ 
 const ADMIN_HASH = "950f50aa32ba9ef49bd1e759a8f54ce2e88bbca7c05987e10933d393967954b6";
-
+ 
 const GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
 const ENTRY_NAME  = "entry.1321807565";
 const ENTRY_EMAIL = "entry.13266213";
 const CONTACT_EMAIL = "lysupport@gmail.com";
 const FREE_LIMIT = 4;
-
+ 
 function getUsage(){try{const r=localStorage.getItem("clr_usage");if(!r)return 0;return parseInt(r)||0;}catch(_){return 0;}}
 function incrementUsage(){const count=getUsage()+1;try{localStorage.setItem("clr_usage",String(count));}catch(_){}return count;}
 function todayUsage(){return getUsage();}
 function getAgeGateAccepted(){try{return localStorage.getItem("clr_age")==="1";}catch(_){return false;}}
 function getToSAccepted(){try{return localStorage.getItem("clr_tos")==="1";}catch(_){return false;}}
 function isAdminMode(){try{return localStorage.getItem("clr_admin")==="1";}catch(_){return false;}}
-
+ 
 async function hashPassword(password){
   const msgBuffer=new TextEncoder().encode(password);
   const hashBuffer=await crypto.subtle.digest("SHA-256",msgBuffer);
   const hashArray=Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b=>b.toString(16).padStart(2,"0")).join("");
 }
-
+ 
 async function submitToGoogle(name,email){
   const formData=new FormData();
   formData.append(ENTRY_NAME,name);
   formData.append(ENTRY_EMAIL,email);
   await fetch(GOOGLE_FORM_URL,{method:"POST",mode:"no-cors",body:formData});
 }
-
+ 
 const CONTEXTS=[
   {id:"work",  label:"Work",  sub:"meetings, slack, feedback", tone:"Professional, direct, solution-focused. Remove blame and emotion."},
   {id:"dating",label:"Dating",sub:"texts, dates, crushes",     tone:"Warm and genuine. Natural, not desperate. Remove try-hard energy."},
   {id:"social",label:"Social",sub:"friends, in-person chats",  tone:"Conversational, relaxed, human. Short enough to say aloud."},
   {id:"email", label:"Email", sub:"professional messages",     tone:"Polished, one clear ask, no fluff. Professional but not cold."},
 ];
-
+ 
 const ARCHETYPES={
   "over-explainer":{key:"over-explainer",label:"The Over-Sharer",emoji:"📖",color:"#9B8EC4",
     tagline:"You lead with empathy, context, and about 40% too many words.",
@@ -86,7 +85,7 @@ const ARCHETYPES={
     tip:"Add one line of context before you land the point.",
     exitStyle:"Give a direct unapologetic exit. No story needed. Example: I need to head off. Or: I am going to go now. Delivered with confidence."},
 };
-
+ 
 const QUIZ=[
   {field:"communicationStyle",q:"When you're stressed, your messages tend to be…",opts:[
     {val:"over-explainer",text:"Long. I explain everything, add context, then add more context."},
@@ -119,7 +118,7 @@ const QUIZ=[
     {val:"tone",       text:"Reading the room and matching my tone to it."},
   ]},
 ];
-
+ 
 function buildPersonality(ans){
   const arch=ARCHETYPES[ans.communicationStyle]||ARCHETYPES.qualifier;
   const tM={"warm-casual":"warm & casual",formal:"formal/stiff",passive:"passive/hedging",direct:"confident & direct"};
@@ -138,12 +137,12 @@ function buildPersonality(ans){
   ].join(" ");
   return{...ans,archetypeKey:arch.key,archetypeLabel:arch.label,archetypeTagline:arch.tagline,aiPromptSummary:summary,completed:true};
 }
-
+ 
 const defaultP={communicationStyle:null,toneDefault:null,mainTrigger:null,afterSendFeeling:null,helpGoal:null,archetypeKey:null,completed:false,aiPromptSummary:null};
-
+ 
 const AC=createContext(null);
 const useApp=()=>useContext(AC);
-
+ 
 function AppProvider({children}){
   const [screen,      setScreen]      = useState("gate");
   const [personality, setPersonality] = useState(defaultP);
@@ -155,7 +154,7 @@ function AppProvider({children}){
   const [history,     setHistory]     = useState([]);
   const [usageCount,  setUsageCount]  = useState(()=>todayUsage());
   const [showPaywall, setShowPaywall] = useState(false);
-
+ 
   useEffect(()=>{
     try{
       const ageOk=getAgeGateAccepted();
@@ -169,16 +168,16 @@ function AppProvider({children}){
       if(h)setHistory(JSON.parse(h)||[]);
     }catch(_){}
   },[]);
-
+ 
   const go=useCallback((to)=>setScreen(to),[]);
-
+ 
   const completeOnboarding=useCallback((ans)=>{
     const full=buildPersonality(ans);
     setPersonality(full);
     try{localStorage.setItem("clr_p",JSON.stringify(full));}catch(_){}
     setScreen("reveal");
   },[]);
-
+ 
   const generate=useCallback(async(currentRaw,currentCtx,currentPersonality)=>{
     if(!currentRaw.trim())return;
     const used=todayUsage();
@@ -194,25 +193,45 @@ function AppProvider({children}){
         "",
         `CONTEXT: ${currentCtx.label} — ${currentCtx.tone}`,
         "",
-        "LANGUAGE: Detect input language carefully. English input → English output. Hinglish input (yaar, bhai, kya, matlab, nahi, haan, arre, woh) → Hinglish output matching young urban Indian texting style. Hindi Devanagari → Hindi. Never switch unless user switches.",
+        "LANGUAGE DETECTION — follow this strictly:",
+        "- If input is in English only → respond in English only.",
+        "- If input contains Hinglish markers (yaar, bhai, kya, matlab, nahi, haan, arre, woh, kar, ho, hai, toh, na, aur, bas, kal, abhi, thoda, bohot, bilkul, seedha, chill, sahi, bata, bol, sun, dikh, lag, chal) → respond in natural Hinglish. Match the vibe of young urban Indian texting — casual, warm, a little playful. Mix Hindi and English words naturally the way a 25-year-old in Mumbai or Delhi would text. Do NOT be formal. Do NOT use pure Hindi. Do NOT use English only.",
+        "- If input is in Hindi Devanagari script → respond in Hindi Devanagari.",
+        "- Never switch language unless the user switches first.",
         "",
         "EXIT DETECTION: If message involves physical discomfort, socially impossible situations, workplace landmines, family traps, bad dates, unwanted flirting, digital text traps — set isExit true and give 3 exit excuses matching user personality. Max 2 sentences each.",
         "",
-        "IF NORMAL REWRITE: set isExit false. Give 3 rewrites. Fix their weakness: over-explaining → cut ruthlessly, terse → add warmth, hedging → be direct, blunt → soften. Each variation meaningfully different in tone and length. Keep SHORT and punchy. Never robotic or LinkedIn-ish.",
+        "IF NORMAL REWRITE: set isExit false. Give 3 rewrites. Fix their specific weakness:",
+        "- over-explainer → cut ruthlessly, keep only the essential ask",
+        "- terse → add one warm human sentence before the point",
+        "- qualifier/softener → remove hedging, be direct but not cold",
+        "- blunt/steamroller → add a line of context or softening before landing the point",
+        "Each variation must be meaningfully different in tone and length. Keep SHORT and punchy. Never robotic, never LinkedIn-ish, never sycophantic.",
         "",
-        "RESPOND WITH ONLY RAW JSON. No markdown. No code fences:",
-        '{"isExit":false,"variations":[{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"}]}',
+        "RESPOND WITH ONLY RAW JSON. No markdown. No code fences. No preamble:",
+        '{"isExit":false,"variations":[{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"}]}',
       ].join("\n");
-
-      const res=await fetch("https://clearly-proxy.ansh4all.workers.dev",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          model:MODEL,
-          messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
-          max_tokens:5000,temperature:0.9,
-        }),
-      });
+ 
+      // 15 second timeout to prevent stuck loading on Social/Email modes
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),15000);
+ 
+      let res;
+      try{
+        res=await fetch("https://clearly-proxy.ansh4all.workers.dev",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          signal:controller.signal,
+          body:JSON.stringify({
+            model:MODEL,
+            messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
+            max_tokens:5000,temperature:0.9,
+          }),
+        });
+      }finally{
+        clearTimeout(timeout);
+      }
+ 
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||"Groq API error");
       const text=data.choices?.[0]?.message?.content||"";
@@ -241,20 +260,20 @@ function AppProvider({children}){
       setGenError("Clearly is taking a breather — try again in a moment.");
     }finally{setLoading(false);}
   },[]);
-
+ 
   const reset=useCallback(()=>{
     setPersonality(defaultP);setResult(null);setRaw("");setGenError(null);
     try{localStorage.removeItem("clr_p");}catch(_){}
     setScreen("splash");
   },[]);
-
+ 
   return(
     <AC.Provider value={{screen,go,personality,completeOnboarding,reset,ctx,setCtx,raw,setRaw,result,setResult,loading,genError,generate,history,usageCount,showPaywall,setShowPaywall}}>
       {children}
     </AC.Provider>
   );
 }
-
+ 
 const D={
   bg:"#0D0E11",bg2:"#111214",surface:"#1C1E22",surf2:"#222529",
   accent:"#8B82B8",accentD:"#6E65A0",
@@ -263,7 +282,7 @@ const D={
   border:"rgba(255,255,255,0.07)",border2:"rgba(255,255,255,0.04)",
   serif:"'Playfair Display',Georgia,serif",sans:"'Inter',sans-serif",
 };
-
+ 
 function PBtn({children,onClick,disabled,style={}}){
   const [h,setH]=useState(false);
   return <button onClick={onClick} disabled={disabled} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
@@ -271,7 +290,7 @@ function PBtn({children,onClick,disabled,style={}}){
     {children}
   </button>;
 }
-
+ 
 function GBtn({children,onClick,style={}}){
   const [h,setH]=useState(false);
   return <button onClick={onClick} onMouseEnter={()=>setH(true)} onMouseLeave={()=>setH(false)}
@@ -279,9 +298,9 @@ function GBtn({children,onClick,style={}}){
     {children}
   </button>;
 }
-
+ 
 function Ambient(){return null;}
-
+ 
 function NameEmailForm({onSubmit,submitting,inputBg=D.surface}){
   const [name,setName]=useState("");
   const [email,setEmail]=useState("");
@@ -303,7 +322,7 @@ function NameEmailForm({onSubmit,submitting,inputBg=D.surface}){
     </div>
   );
 }
-
+ 
 function AdminLogin({onClose}){
   const [password,setPassword]=useState("");
   const [error,setError]=useState("");
@@ -350,7 +369,7 @@ function AdminLogin({onClose}){
     </div>
   );
 }
-
+ 
 function AgeGate(){
   const {go}=useApp();
   const [v,setV]=useState(false);
@@ -380,7 +399,7 @@ function AgeGate(){
     </div>
   );
 }
-
+ 
 function ToSScreen(){
   const {go}=useApp();
   const [scrolled,setScrolled]=useState(false);
@@ -432,7 +451,7 @@ function ToSScreen(){
     </div>
   );
 }
-
+ 
 function BetaBanner(){
   const [dismissed,setDismissed]=useState(()=>{try{return localStorage.getItem("clr_beta")==="1";}catch(_){return false;}});
   const [showForm,setShowForm]=useState(false);
@@ -477,7 +496,7 @@ function BetaBanner(){
     </div>
   );
 }
-
+ 
 function Paywall(){
   const {setShowPaywall}=useApp();
   const [showForm,setShowForm]=useState(false);
@@ -531,7 +550,7 @@ function Paywall(){
     </div>
   );
 }
-
+ 
 function Splash(){
   const {go}=useApp();
   const [v,setV]=useState(false);
@@ -542,8 +561,9 @@ function Splash(){
         <div style={{width:60,height:60,borderRadius:18,background:`linear-gradient(135deg,${D.accent},${D.accentD})`,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",boxShadow:`0 8px 32px ${D.accent}40`}}>
           <span style={{fontSize:28,color:"#fff"}}>✦</span>
         </div>
+        {/* Splash: plain block div, no flex, so Clear+ly sit flush naturally */}
         <div style={{fontFamily:D.serif,fontSize:52,fontWeight:300,color:D.cream,lineHeight:1,letterSpacing:"-0.02em",marginBottom:14}}>
-          <span style={{letterSpacing:"-0.01em"}}>Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em></span>
+          Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em>
         </div>
         <div style={{display:"inline-block",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:20,padding:"4px 14px",marginBottom:16}}>
           <span style={{fontFamily:D.sans,fontSize:11,color:D.accent,fontWeight:500,letterSpacing:"0.06em"}}>FREE BETA</span>
@@ -562,7 +582,7 @@ function Splash(){
     </div>
   );
 }
-
+ 
 function Quiz(){
   const {completeOnboarding}=useApp();
   const [step,setStep]=useState(0);
@@ -617,7 +637,7 @@ function Quiz(){
     </div>
   );
 }
-
+ 
 function WelcomeGate(){
   const {go}=useApp();
   const [showForm,setShowForm]=useState(false);
@@ -670,7 +690,7 @@ function WelcomeGate(){
     </div>
   );
 }
-
+ 
 function Reveal(){
   const {go,personality}=useApp();
   const arch=ARCHETYPES[personality.archetypeKey]||ARCHETYPES.qualifier;
@@ -709,7 +729,7 @@ function Reveal(){
     </div>
   );
 }
-
+ 
 function Main(){
   const {personality,ctx,setCtx,raw,setRaw,generate,reset,usageCount,showPaywall,setShowPaywall}=useApp();
   const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
@@ -719,28 +739,39 @@ function Main(){
   const [adminKeySeq,setAdminKeySeq]=useState("");
   const MAX=800;
   const remaining=Math.max(0,FREE_LIMIT-usageCount);
-
+ 
   useEffect(()=>{
     const handleKey=(e)=>{
       if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;
       const seq=adminKeySeq+e.key;
-      if(seq.endsWith("admin")){setShowAdmin(true);setAdminKeySeq("");}
-      else{setAdminKeySeq(seq.slice(-5));}
+      if(seq.endsWith("admin")){
+        // Toggle: if already admin, deactivate; otherwise show login
+        if(isAdminMode()){
+          try{localStorage.removeItem("clr_admin");}catch(_){}
+          setIsAdmin(false);
+        }else{
+          setShowAdmin(true);
+        }
+        setAdminKeySeq("");
+      }else{
+        setAdminKeySeq(seq.slice(-5));
+      }
     };
     window.addEventListener("keydown",handleKey);
     return()=>window.removeEventListener("keydown",handleKey);
   },[adminKeySeq]);
-
+ 
   const handleFilter=()=>generate(raw,ctx,personality);
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
       {showPaywall&&<Paywall/>}
       {showAdmin&&<AdminLogin onClose={(success)=>{setShowAdmin(false);if(success)setIsAdmin(true);}}/>}
       <div style={{position:"relative",zIndex:2,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 24px 0",flexShrink:0}}>
-        <div style={{fontFamily:D.serif,fontSize:22,fontWeight:300,color:D.cream,letterSpacing:"-0.01em",display:"flex",alignItems:"center",gap:8}}>
-          <span style={{letterSpacing:"-0.03em"}}>Clear</span><em style={{fontStyle:"italic",color:D.accent}}>ly</em>
+        {/* KEY FIX: em nested inside span so both are one flex child — gap:8 won't split them */}
+        <div style={{fontFamily:D.serif,fontSize:22,fontWeight:300,color:D.cream,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{letterSpacing:"-0.02em"}}>Clear<em style={{fontStyle:"italic",color:D.accent}}>ly</em></span>
           <span style={{fontFamily:D.sans,fontSize:9,color:D.accent,letterSpacing:"0.08em",textTransform:"uppercase",background:`${D.accent}20`,border:`1px solid ${D.accent}40`,borderRadius:8,padding:"2px 6px"}}>BETA</span>
-          {isAdmin&&<span style={{width:6,height:6,borderRadius:"50%",background:"#E8C97A",display:"inline-block",marginLeft:2,verticalAlign:"middle"}}/>}
+          {isAdmin&&<span style={{width:6,height:6,borderRadius:"50%",background:"#E8C97A",display:"inline-block"}}/>}
         </div>
         {arch&&(
           <button onClick={()=>setShowP(p=>!p)} style={{background:D.surface,border:`1px solid ${D.border}`,borderRadius:20,padding:"6px 14px 6px 10px",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
@@ -808,7 +839,7 @@ function Main(){
     </div>
   );
 }
-
+ 
 function Output(){
   const {go,ctx,raw,result,setResult,loading,genError,generate,personality,showPaywall}=useApp();
   const arch=personality.completed?ARCHETYPES[personality.archetypeKey]:null;
@@ -819,14 +850,14 @@ function Output(){
   const [feedback,setFeedback]=useState({0:"",1:"",2:""});
   const [profanityWarning,setProfanityWarning]=useState({0:false,1:false,2:false});
   const [visible,setVisible]=useState([false,false,false]);
-
+ 
   const PROFANITY=["fuck","shit","cunt","bitch","asshole","bastard","dick","pussy","cock","twat","wanker","piss","arse","bollocks","damn","crap","motherfucker","fucker"];
-
+ 
   function containsProfanity(text){
     const words=text.toLowerCase().replace(/[^a-z\s]/g,"").split(/\s+/);
     return words.some(w=>PROFANITY.includes(w));
   }
-
+ 
   useEffect(()=>{
     if(!result?.variations)return;
     setRatings({0:0,1:0,2:0});
@@ -837,11 +868,11 @@ function Output(){
     const t2=setTimeout(()=>setVisible(v=>[v[0],v[1],true]),500);
     return()=>{clearTimeout(t0);clearTimeout(t1);clearTimeout(t2);};
   },[result]);
-
+ 
   const copy=async(text,index)=>{
     try{await navigator.clipboard.writeText(text);setCopiedIndex(index);setTimeout(()=>setCopiedIndex(null),2200);}catch(_){}
   };
-
+ 
   const handleFeedback=(index,value)=>{
     if(containsProfanity(value)){
       setProfanityWarning(p=>({...p,[index]:true}));
@@ -849,9 +880,9 @@ function Output(){
     }
     setFeedback(f=>({...f,[index]:value}));
   };
-
+ 
   const variations=result?.variations||[];
-
+ 
   return(
     <div style={{display:"flex",flexDirection:"column",height:"100%",position:"relative"}}>
       {showPaywall&&<Paywall/>}
@@ -929,7 +960,7 @@ function Output(){
     </div>
   );
 }
-
+ 
 function Shell(){
   const {screen}=useApp();
   const map={gate:<AgeGate/>,tos:<ToSScreen/>,splash:<Splash/>,quiz:<Quiz/>,reveal:<Reveal/>,welcome:<WelcomeGate/>,main:<Main/>,output:<Output/>};
@@ -953,7 +984,7 @@ function Shell(){
     </div>
   );
 }
-
+ 
 function App(){
   const isMobile=window.innerWidth<=500;
   if(isMobile){
@@ -967,7 +998,7 @@ function App(){
     </div>
   );
 }
-
+ 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
