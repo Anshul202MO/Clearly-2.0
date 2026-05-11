@@ -210,6 +210,7 @@ function AppProvider({children}){
         "",
         "RESPOND WITH ONLY RAW JSON. No markdown. No code fences. No preamble:",
         '{"isExit":false,"variations":[{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"},{"refined":"text","explanation":"one line why this works"}]}',
+"CRITICAL: always use key name 'variations' — never use 'exit-excuses' or any other key name. Even for exit mode, the key must be 'variations'.",
       ].join("\n");
  
       // 15 second timeout to prevent stuck loading on Social/Email modes
@@ -235,7 +236,6 @@ function AppProvider({children}){
       const data=await res.json();
       if(data.error)throw new Error(data.error.message||"Groq API error");
       const text=data.choices?.[0]?.message?.content||"";
-console.log("RAW RESPONSE:",text);
       if(!text)throw new Error("Empty response");
       let clean=text.replace(/```json|```/g,"").trim();
       let parsed;
