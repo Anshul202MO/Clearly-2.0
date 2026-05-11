@@ -50,14 +50,8 @@ async function hashPassword(password){
 }
  
 async function submitToGoogle(name,email){
-  return new Promise((resolve)=>{
-    const url=`${GOOGLE_FORM_URL}?${ENTRY_NAME}=${encodeURIComponent(name)}&${ENTRY_EMAIL}=${encodeURIComponent(email)}&submit=Submit`;
-    const img=new Image();
-    img.onload=()=>resolve();
-    img.onerror=()=>resolve();
-    img.src=url;
-    setTimeout(resolve,3000);
-  });
+  const url=`https://script.google.com/macros/s/AKfycbxbQ-MvFzN1TqqOKE5WSc77G65whC2xyu5D5n8H7CN1_EbhSh79JKEVpN0TrGCVnQxb8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
+  try{await fetch(url,{mode:"no-cors"});}catch(_){}
 }
  
 const CONTEXTS=[
