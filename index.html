@@ -24,13 +24,6 @@ input::placeholder{color:#5C5955;}
 <script type="text/babel">
 const {useState,useContext,createContext,useEffect,useCallback,useRef}=React;
 
-// =============================================
-// PASTE YOUR GROQ API KEY BETWEEN THE QUOTES
-// Get free at: console.groq.com
-// Starts with: gsk_
-// =============================================
-const GROQ_KEY = "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";
-// =============================================
 
 // To swap model back to 70b: change to "llama-3.3-70b-versatile"
 const MODEL = "llama-3.1-8b-instant";
@@ -215,9 +208,9 @@ function AppProvider({children}){
         '{"isExit":false,"variations":[{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"},{"refined":"text","explanation":"one line"}]}',
       ].join("\n");
 
-      const res=await fetch("https://api.groq.com/openai/v1/chat/completions",{
+      const res=await fetch("https://clearly-proxy.ansh4all.workers.dev",{
         method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${GROQ_KEY}`},
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           model:MODEL,
           messages:[{role:"system",content:systemPrompt},{role:"user",content:currentRaw}],
