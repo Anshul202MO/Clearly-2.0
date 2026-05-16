@@ -51,26 +51,14 @@ async function hashPassword(password){
  
 async function submitToGoogle(name,email){
   return new Promise((resolve)=>{
-    const iframe=document.createElement("iframe");
-    iframe.name="gf_iframe";
-    iframe.style.display="none";
-    document.body.appendChild(iframe);
-    const form=document.createElement("form");
-    form.method="GET";
-form.action="https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec";
-    form.target="gf_iframe";
-    [["entry.1321807565",name],["entry.13266213",email]].forEach(([n,v])=>{
-      const i=document.createElement("input");
-      i.type="hidden";i.name=n;i.value=v;
-      form.appendChild(i);
-    });
-    document.body.appendChild(form);
-    iframe.onload=()=>{setTimeout(()=>{document.body.removeChild(form);document.body.removeChild(iframe);},500);resolve();};
-    form.submit();
+    const url=`https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
+    const img=new Image();
+    img.onload=()=>resolve();
+    img.onerror=()=>resolve();
+    img.src=url;
     setTimeout(resolve,3000);
   });
-}
- 
+} 
 const CONTEXTS=[
   {id:"work",  label:"Work",  sub:"meetings, slack, feedback", tone:"Professional, direct, solution-focused. Remove blame and emotion."},
   {id:"dating",label:"Dating",sub:"texts, dates, crushes",     tone:"Warm and genuine. Natural, not desperate. Remove try-hard energy."},
