@@ -49,14 +49,16 @@ async function hashPassword(password){
   return hashArray.map(b=>b.toString(16).padStart(2,"0")).join("");
 }
  
-async function submitToGoogle(name,email){
-  return new Promise((resolve)=>{
-    const url=`https://script.google.com/macros/s/AKfycbxbQ-MvFzN1TqqOKE5WSc77G65whC2xyu5D5n8H7CN1_EbhSh79JKEVpN0TrGCVnQxb8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
-    const img=new Image();
-    img.onload=()=>resolve();
-    img.onerror=()=>resolve();
-    img.src=url;
-    setTimeout(resolve,3000);
+async function submitToGoogle(name, email) {
+  return new Promise((resolve) => {
+    const formUrl = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
+    const data = new FormData();
+    data.append("entry.1321807565", name);
+    data.append("entry.13266213", email);
+    fetch(formUrl, { method: "POST", mode: "no-cors", body: data })
+      .then(() => resolve())
+      .catch(() => resolve());
+    setTimeout(resolve, 3000);
   });
 }
  
