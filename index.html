@@ -49,16 +49,25 @@ async function hashPassword(password){
   return hashArray.map(b=>b.toString(16).padStart(2,"0")).join("");
 }
  
-async function submitToGoogle(name, email) {
-  return new Promise((resolve) => {
-    const formUrl = "https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
-    const data = new FormData();
-    data.append("entry.1321807565", name);
-    data.append("entry.13266213", email);
-    fetch(formUrl, { method: "POST", mode: "no-cors", body: data })
-      .then(() => resolve())
-      .catch(() => resolve());
-    setTimeout(resolve, 3000);
+async function submitToGoogle(name,email){
+  return new Promise((resolve)=>{
+    const iframe=document.createElement("iframe");
+    iframe.name="gf_iframe";
+    iframe.style.display="none";
+    document.body.appendChild(iframe);
+    const form=document.createElement("form");
+    form.method="POST";
+    form.action="https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
+    form.target="gf_iframe";
+    [["entry.1321807565",name],["entry.13266213",email]].forEach(([n,v])=>{
+      const i=document.createElement("input");
+      i.type="hidden";i.name=n;i.value=v;
+      form.appendChild(i);
+    });
+    document.body.appendChild(form);
+    iframe.onload=()=>{setTimeout(()=>{document.body.removeChild(form);document.body.removeChild(iframe);},500);resolve();};
+    form.submit();
+    setTimeout(resolve,3000);
   });
 }
  
