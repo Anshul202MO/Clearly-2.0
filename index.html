@@ -56,8 +56,8 @@ async function submitToGoogle(name,email){
     iframe.style.display="none";
     document.body.appendChild(iframe);
     const form=document.createElement("form");
-    form.method="POST";
-    form.action="https://docs.google.com/forms/d/e/1FAIpQLSfGUOA7cpfxdATBHZA7CE2Cfxdf5OvD6u9VxjWIHR0hdRHXew/formResponse";
+    form.method="GET";
+form.action="https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec";
     form.target="gf_iframe";
     [["entry.1321807565",name],["entry.13266213",email]].forEach(([n,v])=>{
       const i=document.createElement("input");
