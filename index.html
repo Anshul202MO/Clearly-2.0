@@ -49,16 +49,43 @@ async function hashPassword(password){
   return hashArray.map(b=>b.toString(16).padStart(2,"0")).join("");
 }
  
-async function submitToGoogle(name,email){
+function getRetryQueue(){try{const r=localStorage.getItem("clr_retry_q");return r?JSON.parse(r):[];}catch(_){return [];}}
+function saveRetryQueue(q){try{localStorage.setItem("clr_retry_q",JSON.stringify(q));}catch(_){}}
+function queueFailedSubmit(name,email){
+  const q=getRetryQueue();
+  q.push({name,email,ts:Date.now()});
+  saveRetryQueue(q);
+}
+function removeFromRetryQueue(email,ts){
+  const q=getRetryQueue().filter(item=>!(item.email===email&&item.ts===ts));
+  saveRetryQueue(q);
+}
+
+function pingGoogle(name,email){
   return new Promise((resolve)=>{
     const url=`https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
     const img=new Image();
-    img.onload=()=>resolve();
-    img.onerror=()=>resolve();
+    let settled=false;
+    img.onload=()=>{if(!settled){settled=true;resolve(true);}};
+    img.onerror=()=>{if(!settled){settled=true;resolve(false);}};
     img.src=url;
-    setTimeout(resolve,3000);
+    setTimeout(()=>{if(!settled){settled=true;resolve(true);}},3000);
   });
-} 
+}
+
+async function submitToGoogle(name,email){
+  const ok=await pingGoogle(name,email);
+  if(!ok)queueFailedSubmit(name,email);
+}
+
+async function retryQueuedSubmits(){
+  const q=getRetryQueue();
+  if(!q.length)return;
+  for(const item of q){
+    const ok=await pingGoogle(item.name,item.email);
+    if(ok)removeFromRetryQueue(item.email,item.ts);
+  }
+}
 const CONTEXTS=[
   {id:"work",  label:"Work",  sub:"meetings, slack, feedback", tone:"Professional, direct, solution-focused. Remove blame and emotion."},
   {id:"dating",label:"Dating",sub:"texts, dates, crushes",     tone:"Warm and genuine. Natural, not desperate. Remove try-hard energy."},
@@ -158,7 +185,7 @@ function AppProvider({children}){
   const [usageCount,  setUsageCount]  = useState(()=>todayUsage());
   const [showPaywall, setShowPaywall] = useState(false);
  
-  useEffect(()=>{
+ useEffect(()=>{
     try{
       const ageOk=getAgeGateAccepted();
       const tosOk=getToSAccepted();
@@ -170,6 +197,7 @@ function AppProvider({children}){
       const h=localStorage.getItem("clr_h");
       if(h)setHistory(JSON.parse(h)||[]);
     }catch(_){}
+    retryQueuedSubmits();
   },[]);
  
   const go=useCallback((to)=>setScreen(to),[]);
