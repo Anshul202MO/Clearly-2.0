@@ -62,15 +62,8 @@ function removeFromRetryQueue(email,ts){
 }
 
 function pingGoogle(name,email){
-  return new Promise((resolve)=>{
-    const url=`https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
-    const img=new Image();
-    let settled=false;
-    img.onload=()=>{if(!settled){settled=true;resolve(true);}};
-    img.onerror=()=>{if(!settled){settled=true;resolve(false);}};
-    img.src=url;
-    setTimeout(()=>{if(!settled){settled=true;resolve(true);}},3000);
-  });
+  const url=`https://script.google.com/macros/s/AKfycbzuDCfOyaq2kufIYKSryUmas1K-lRqCa0864qJENemCmZahBwWr1WV302UNPHAHt-Tk8A/exec?name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}`;
+  return fetch(url,{mode:"no-cors"}).then(()=>true).catch(()=>false);
 }
 
 async function submitToGoogle(name,email){
